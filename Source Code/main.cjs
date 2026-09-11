@@ -6,18 +6,32 @@ const {
   shell,
   desktopCapturer,
   screen,
-  globalShortcut
+  globalShortcut,
+  nativeImage
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { Store, Observer, scanQuestHistory, parseTaskOcr } = require('./core.cjs');
+const { liftText: liftTextPixels } = require('./imaging.cjs');
+const { signatureOf, signatureFrom, resemblance } = require('./appearance.cjs');
+
+const {
+  cell: templateCell,
+  slotSize,
+  gridPhases,
+  tileOrigin,
+  sampleTile,
+  TemplateStore
+} = require('./templates.cjs');
 const {
   modeSlugs,
   normalizeItemPayload,
   validateItemCatalog,
-  matchItemText
+  matchItemText,
+  matchItemLines
 } = require('./items.cjs');
 let win, store, observer, ocrWorker, ocrWorkerPromise, priceOverlay, priceOverlayTimer;
+let lastOcrProgress = '';
 let itemHotkeyRunning = false,
   itemHotkeyRegistered = false;
 let ocrContext = null,
@@ -151,11 +165,26 @@ function itemCatalogFile(mode) {
 function bundledItemCatalogFile(mode) {
   return path.join(assetRoot, 'data', 'items-' + mode + '.json');
 }
+const itemCatalogs = new Map();
 function loadItemCatalog(mode) {
   validateMode(mode);
   for (const file of [itemCatalogFile(mode), bundledItemCatalogFile(mode)]) {
+    let stamp;
     try {
-      return validateItemCatalog(JSON.parse(fs.readFileSync(file, 'utf8')));
+      const stat = fs.statSync(file);
+      stamp = file + ':' + stat.mtimeMs + ':' + stat.size;
+    } catch {
+      continue;
+    }
+    // The parsed catalog is reused until the file itself changes: the matcher
+    // derives an index from it, and rebuilding that per scan is what made the
+    // item hotkey feel like it had hung.
+    const cached = itemCatalogs.get(mode);
+    if (cached?.stamp === stamp) return cached.catalog;
+    try {
+      const catalog = validateItemCatalog(JSON.parse(fs.readFileSync(file, 'utf8')));
+      itemCatalogs.set(mode, { stamp, catalog });
+      return catalog;
     } catch {}
   }
   throw Error('The item price catalog is unavailable.');
@@ -185,6 +214,7 @@ async function updateItemCatalog(mode) {
   await fs.promises.mkdir(path.dirname(target), { recursive: true });
   await fs.promises.writeFile(tmp, JSON.stringify(catalog));
   await fs.promises.rename(tmp, target);
+  itemCatalogs.delete(mode);
   return catalog;
 }
 async function ensureOcrWorker() {
@@ -198,12 +228,15 @@ async function ensureOcrWorker() {
         corePath: path.dirname(require.resolve('tesseract.js-core/tesseract-core.wasm.js')),
         cachePath: path.join(app.getPath('userData'), 'ocr-cache'),
         logger: progress => {
-          if (!win?.isDestroyed())
-            win.webContents.send('ocr-progress', {
-              status: progress.status,
-              progress: progress.progress || 0,
-              context: ocrContext
-            });
+          const done = progress.progress || 0,
+            step = progress.status + ':' + Math.floor(done * 10);
+          if (step === lastOcrProgress || win?.isDestroyed()) return;
+          lastOcrProgress = step;
+          win.webContents.send('ocr-progress', {
+            status: progress.status,
+            progress: done,
+            context: ocrContext
+          });
         }
       });
       await worker.setParameters({ preserve_interword_spaces: '1' });
@@ -224,7 +257,7 @@ function recognizeWithOcr(image, context) {
         preserve_interword_spaces: '1',
         tessedit_pageseg_mode: context === 'hotkey' ? '11' : '3'
       });
-      return await worker.recognize(image);
+      return await worker.recognize(image, {}, { blocks: true, text: true });
     } finally {
       ocrContext = null;
     }
@@ -335,6 +368,18 @@ async function showPriceOverlay(payload, cursor) {
       7000
     );
 }
+// How wide a square of screen to judge the colour by. An inventory slot is
+// about sixty pixels at 1080p and its name runs along the top of it, so a
+// smaller centred box stays on the item itself whichever part of the slot the
+// cursor is in.
+const appearanceBox = 40;
+
+// The crop is prepared before it is read: see imaging.cjs.
+function liftText(image) {
+  const { width, height } = image.getSize();
+  if (!width || !height) return image;
+  return nativeImage.createFromBitmap(liftTextPixels(image.toBitmap()), { width, height });
+}
 async function captureCursorRegions(cursor, specs) {
   const display = screen.getDisplayNearestPoint(cursor),
     requested = {
@@ -363,57 +408,352 @@ async function captureCursorRegions(cursor, specs) {
       height = Math.max(1, Math.round(regionHeight * sy)),
       x = Math.max(0, Math.min(Math.round(centerX - width / 2), size.width - width)),
       y = Math.max(0, Math.min(Math.round(centerY - height / 2), size.height - height)),
-      crop = source.thumbnail.crop({ x, y, width, height }),
-      scale = Math.max(1, Number(spec.scale) || 1);
-    return scale > 1
-      ? crop
-          .resize({
-            width: Math.min(1800, Math.round(width * scale)),
-            height: Math.min(1400, Math.round(height * scale)),
-            quality: 'best'
-          })
-          .toPNG()
-      : crop.toPNG();
+      scale = Math.max(1, Number(spec.scale) || 1),
+      outWidth = scale > 1 ? Math.min(1800, Math.round(width * scale)) : width,
+      outHeight = scale > 1 ? Math.min(1400, Math.round(height * scale)) : height;
+    return {
+      // Cropped and resampled only if this region is read. Most scans answer
+      // from the first one and never touch the other two.
+      png: () => {
+        const crop = liftText(source.thumbnail.crop({ x, y, width, height }));
+        return scale > 1
+          ? crop.resize({ width: outWidth, height: outHeight, quality: 'best' }).toPNG()
+          : crop.toPNG();
+      },
+      // The colour of what is under the cursor, taken before the text is
+      // lifted, because lifting it throws the colour away. A small box so it
+      // stays inside one inventory slot and clear of the name along its top.
+      appearance: () => {
+        const crop = source.thumbnail.crop({ x, y, width, height }),
+          taken = crop.getSize(),
+          side = Math.max(8, Math.round(appearanceBox * sx));
+        return signatureOf(crop.toBitmap(), taken.width, taken.height, {
+          left: Math.round(centerX - x - side / 2),
+          top: Math.round(centerY - y - side / 2),
+          width: side,
+          height: side
+        });
+      },
+      // The captured pixels as they came, for comparing the tile against the
+      // artwork. Nothing is done to them: the comparison wants the colours the
+      // game drew, and it works in captured pixels rather than screen ones.
+      raw: () => {
+        const crop = source.thumbnail.crop({ x, y, width, height }),
+          taken = crop.getSize();
+        return {
+          bgra: crop.toBitmap(),
+          width: taken.width,
+          height: taken.height,
+          cursorX: Math.round(centerX - x),
+          cursorY: Math.round(centerY - y),
+          // one screen pixel became this many captured pixels
+          density: sx
+        };
+      },
+      // Where the cursor lands inside this image, and how many image pixels one
+      // screen pixel became, so the OCR line boxes can be read back in screen
+      // pixels no matter which of the three crops they came from.
+      cursorX: (centerX - x) * (outWidth / width),
+      cursorY: (centerY - y) * (outHeight / height),
+      density: (outWidth / width) * sx
+    };
   });
 }
-function clearInventoryMatch(matches) {
+// Places one OCR pass around the cursor, in screen pixels with the cursor at
+// the origin.
+function cursorLines(result, shot, group) {
+  const lines = [];
+  for (const block of result?.data?.blocks || [])
+    for (const paragraph of block.paragraphs || [])
+      for (const line of paragraph.lines || []) {
+        const box = line.bbox;
+        if (!box) continue;
+        lines.push({
+          group,
+          text: String(line.text || '').trim(),
+          left: (box.x0 - shot.cursorX) / shot.density,
+          right: (box.x1 - shot.cursorX) / shot.density,
+          top: (box.y0 - shot.cursorY) / shot.density,
+          bottom: (box.y1 - shot.cursorY) / shot.density
+        });
+      }
+  return lines;
+}
+// True while the cursor is inside a line of text the reading found.
+function cursorOnText(lines) {
+  return lines.some(line => line.left <= 0 && line.right >= 0 && line.top <= 0 && line.bottom >= 0);
+}
+// How much the colour under the cursor is allowed to move the order.
+const appearanceWeight = 1;
+// On an item rather than on a list, the reading is often damaged past the point
+// where a name is worth offering on its own: "Pliers" comes back as "Bllers",
+// "Shampoo" as "Shampoa". Those names are kept anyway and the colour decides
+// between them. Worth two more right answers in fourteen on the bench, and it
+// cannot reach the flea market list, where the names are read properly.
+const weakNameFloor = 0.25,
+  weakNameKeep = 60;
+const shownMatches = 5;
+// What a candidate keeps when no artwork is published for it, so an item the
+// pack does not cover is not silently unreachable.
+const pictureless = 0.55;
+// How sure the artwork has to be before it may propose a name the reading never
+// offered at all.
+const pictureCertain = 0.8;
+let appearanceCatalog, pictureCatalog;
+
+// The artwork of every item, loaded the first time the shortcut is used.
+function loadTemplates() {
+  if (pictureCatalog === undefined)
+    try {
+      const index = JSON.parse(
+        fs.readFileSync(path.join(assetRoot, 'data', 'item-templates.json'), 'utf8')
+      );
+      pictureCatalog =
+        index.cell === templateCell
+          ? new TemplateStore(
+              index,
+              fs.readFileSync(path.join(assetRoot, 'data', 'item-templates.bin'))
+            )
+          : null;
+    } catch {
+      pictureCatalog = null;
+    }
+  return pictureCatalog;
+}
+
+/*
+ * Every reading of where the tile under the cursor might be, for a given shape.
+ *
+ * The grid is found from the capture rather than assumed: the phase is only
+ * good to a pixel or two, an item wider or taller than one slot can hold the
+ * cursor in any of its cells, and a small container gives the measurement very
+ * little to work with, so all of it is tried and the best answer wins.
+ */
+function tileViews(around) {
+  const shot = around.raw();
+  if (!shot?.width || !shot?.height) return null;
+  const grey = new Uint8Array(shot.width * shot.height);
+  for (let p = 0, i = 0; p < grey.length; p++, i += 4)
+    grey[p] = (0.0722 * shot.bgra[i] + 0.7152 * shot.bgra[i + 1] + 0.2126 * shot.bgra[i + 2]) | 0;
+  const slot =
+      slotSize(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).size.height) *
+      shot.density,
+    phases = gridPhases(grey, shot.width, shot.height, 0, 0, slot, 2),
+    cache = new Map();
+  return (slotsWide, slotsTall, thorough) => {
+    const key = slotsWide + 'x' + slotsTall + (thorough ? 'f' : 'c');
+    if (cache.has(key)) return cache.get(key);
+    const sideX = Math.round(slot * slotsWide) + 1,
+      sideY = Math.round(slot * slotsTall) + 1,
+      nudges = thorough ? [-2, 0, 2] : [0],
+      out = [];
+    for (const px of phases.x)
+      for (const py of phases.y)
+        for (let dx = 0; dx < slotsWide; dx++)
+          for (let dy = 0; dy < slotsTall; dy++)
+            for (const nx of nudges)
+              for (const ny of nudges) {
+                const left = tileOrigin(shot.cursorX, px, phases.step) - Math.round(dx * slot) + nx,
+                  top = tileOrigin(shot.cursorY, py, phases.step) - Math.round(dy * slot) + ny;
+                if (left < 0 || top < 0 || left + sideX > shot.width || top + sideY > shot.height)
+                  continue;
+                // the cursor has to be inside the tile being proposed
+                if (
+                  shot.cursorX < left ||
+                  shot.cursorX > left + sideX ||
+                  shot.cursorY < top ||
+                  shot.cursorY > top + sideY
+                )
+                  continue;
+                out.push(
+                  sampleTile(shot.bgra, shot.width, left, top, sideX, sideY, slotsWide, slotsTall)
+                );
+              }
+    cache.set(key, out);
+    return out;
+  };
+}
+function loadAppearance() {
+  if (appearanceCatalog === undefined)
+    try {
+      const doc = JSON.parse(
+        fs.readFileSync(path.join(assetRoot, 'data', 'item-appearance.json'), 'utf8')
+      );
+      appearanceCatalog =
+        doc?.signatures && typeof doc.signatures === 'object' ? doc.signatures : null;
+    } catch {
+      appearanceCatalog = null;
+    }
+  return appearanceCatalog;
+}
+// Names the cursor's own position and, where it can, what the thing looks like.
+//
+// Down a flea market list the name is directly under the pointer and reads
+// reliably, and what is behind it is the list rather than the item, so the
+// colour is left out of it entirely.
+function identify(lines, catalog, seen, around) {
+  const pictures = loadTemplates(),
+    // Only when the cursor is on an item rather than on its name. Down a flea
+    // market list the name is under the pointer and reads reliably, and behind
+    // it is the list, not the item.
+    onArtwork = !cursorOnText(lines);
+  if (!onArtwork) return matchItemLines(lines, catalog, shownMatches);
+  // The reading is often damaged past the point where a name is worth offering
+  // on its own - "Pliers" comes back as "Bllers" - so weaker names are kept and
+  // something else decides between them.
+  const matches = matchItemLines(lines, catalog, weakNameKeep, weakNameFloor);
+  if (matches.length < 2) return matches.slice(0, shownMatches);
+  const judged = pictures && around ? matchByPicture(matches, pictures, around) : null;
+  if (judged) return judged;
+  return rankByColour(matches, seen);
+}
+
+// Ranks the names the reading offered by how much each one's artwork looks like
+// the tile under the cursor.
+function catalogItem(id) {
+  for (const mode of ['seasonal', 'pvp', 'pve'])
+    try {
+      const found = loadItemCatalog(mode).items.find(item => item.id === id);
+      if (found) return found;
+    } catch {}
+  return null;
+}
+function matchByPicture(matches, pictures, around) {
+  const views = tileViews(around);
+  if (!views) return null;
+  const scored = pictures.identify(
+    views,
+    matches.map(match => match.id)
+  );
+  if (scored.length < 2) return null;
+  // A name the reading lost outright can still be recovered from the artwork,
+  // but only when the artwork is sure. Below that the catalogue is large enough
+  // that something always correlates well by accident: searching all of it
+  // named six tiles of twelve correctly on its own, against eleven when the
+  // choice was already narrowed to a shortlist.
+  const recovered = pictures
+    .identify(views)
+    .filter(
+      entry => entry.score >= pictureCertain && !matches.some(match => match.id === entry.id)
+    );
+  if (recovered.length && recovered[0].score > (scored[0]?.score ?? 0)) {
+    const item = catalogItem(recovered[0].id);
+    if (item)
+      return [
+        {
+          ...item,
+          confidence: 0.5,
+          score: recovered[0].score,
+          looksLike: recovered[0].score,
+          gap: 0,
+          matchedText: ''
+        },
+        ...matches.slice(0, shownMatches - 1)
+      ];
+  }
+  const looks = new Map(scored.map(entry => [entry.id, entry.score]));
+  const ranked = matches
+    .map(match => {
+      const look = looks.get(match.id);
+      return {
+        ...match,
+        looksLike: look === undefined ? null : look,
+        // The picture decides; the name it was read from still counts, so a
+        // candidate that was barely read cannot win on a lucky correlation.
+        score: Number(
+          (look === undefined
+            ? match.score * pictureless
+            : look * (0.6 + 0.4 * match.confidence)
+          ).toFixed(4)
+        )
+      };
+    })
+    .sort((a, b) => b.score - a.score || (b.avg24hPrice || 0) - (a.avg24hPrice || 0));
+  return ranked.slice(0, shownMatches);
+}
+
+// Falls back to the coarse colour comparison when there is no artwork on file.
+function rankByColour(matches, seen) {
+  const described = loadAppearance();
+  if (!seen || !described) return matches.slice(0, shownMatches);
+  const judged = matches.map(match => ({
+    match,
+    likeness: resemblance(seen, signatureFrom(described[match.id]))
+  }));
+  const best = Math.max(0, ...judged.map(entry => entry.likeness ?? 0));
+  if (!best || judged.filter(entry => entry.likeness !== null).length < 2)
+    return matches.slice(0, shownMatches);
+  return judged
+    .map(entry => {
+      const like = entry.likeness === null ? 1 : entry.likeness / best;
+      return {
+        ...entry.match,
+        looksLike: entry.likeness === null ? null : Number(like.toFixed(3)),
+        score: Number(
+          (entry.match.score * (1 - appearanceWeight + appearanceWeight * like)).toFixed(4)
+        )
+      };
+    })
+    .sort((a, b) => b.score - a.score || (b.avg24hPrice || 0) - (a.avg24hPrice || 0))
+    .slice(0, shownMatches);
+}
+function clearInventoryMatch(matches, lines) {
   if (!matches[0] || matches[0].confidence < 0.76) return false;
-  return !matches[1] || matches[0].confidence - matches[1].confidence >= 0.05;
+  // The cursor is on a name and the answer came from somewhere else, so that
+  // name was not read. Answering with a neighbour would be a guess: a misread
+  // "Bandana (1)" once came back as the baseball cap on the row below.
+  if (cursorOnText(lines) && matches[0].gap > 0) return false;
+  // Scores fade with distance from the cursor, so a fixed gap would mean
+  // different things near and far. Compare them as a ratio instead. A tenth
+  // ahead is enough: on the fourteen measured screen positions nothing below
+  // that margin was ever wrong, and each widening costs a second, larger OCR
+  // pass, which is most of the wait the user sees.
+  return !matches[1] || matches[0].score >= matches[1].score * 1.1;
 }
 async function scanHoveredItem() {
   if (itemHotkeyRunning || !store?.data?.settings?.itemHotkeyEnabled) return;
   itemHotkeyRunning = true;
   const cursor = screen.getCursorScreenPoint();
   try {
-    if (priceOverlay && !priceOverlay.isDestroyed()) priceOverlay.hide();
+    // Hiding a window is not instant, and the capture that follows would
+    // otherwise photograph the last answer still on screen and read it back as
+    // this one. Pressing the shortcut twice in a row did exactly that.
+    if (priceOverlay && !priceOverlay.isDestroyed() && priceOverlay.isVisible()) {
+      priceOverlay.hide();
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
     const catalog = loadItemCatalog(store.data.mode),
-      [tile, nearby, wide] = await captureCursorRegions(cursor, [
+      [tile, nearby, wide, around] = await captureCursorRegions(cursor, [
         { width: 320, height: 220, scale: 3 },
         { width: 720, height: 460, scale: 2 },
-        { width: 1100, height: 760, scale: 1.5 }
+        { width: 1100, height: 760, scale: 1.5 },
+        // Seven slots each way, so even a large item still falls inside it.
+        { width: 448, height: 448, scale: 1 }
       ]);
     await showPriceOverlay({ state: 'loading', shortcut: ITEM_HOTKEY }, cursor);
-    const first = await recognizeWithOcr(tile, 'hotkey');
+    const seen = tile.appearance(),
+      first = await recognizeWithOcr(tile.png(), 'hotkey');
     let text = String(first.data.text || ''),
-      matches = matchItemText(text, catalog, 5),
+      lines = cursorLines(first, tile, 'tile'),
+      matches = identify(lines, catalog, seen, around),
       scanArea = 'inventory tile';
-    if (!clearInventoryMatch(matches)) {
-      const fallback = await recognizeWithOcr(nearby, 'hotkey');
+    if (!clearInventoryMatch(matches, lines)) {
+      const fallback = await recognizeWithOcr(nearby.png(), 'hotkey');
       text += '\n' + String(fallback.data.text || '');
-      matches = matchItemText(text, catalog, 5);
+      lines = lines.concat(cursorLines(fallback, nearby, 'nearby'));
+      matches = identify(lines, catalog, seen, around);
       scanArea = 'nearby inventory';
     }
     if (!matches[0]) {
-      const fallback = await recognizeWithOcr(wide, 'hotkey');
+      const fallback = await recognizeWithOcr(wide.png(), 'hotkey');
       text += '\n' + String(fallback.data.text || '');
-      matches = matchItemText(text, catalog, 5);
+      lines = lines.concat(cursorLines(fallback, wide, 'wide'));
+      matches = identify(lines, catalog, seen, around);
       scanArea = 'expanded inventory';
     }
     const item = matches[0];
     if (item) {
-      const closeMatches = matches.filter(
-          match => item.confidence - match.confidence < 0.04
-        ).length,
+      const closeMatches = matches.filter(match => match.score >= item.score * 0.87).length,
         noFlea = item.types?.includes('noFlea'),
         flea =
           !noFlea && item.avg24hPrice > 0
@@ -522,7 +862,11 @@ async function refreshQuestLogs() {
     const latest = seen[seen.length - 1];
     return {
       id,
-      trader: seen.map(event => event.trader).filter(Boolean).pop() || null,
+      trader:
+        seen
+          .map(event => event.trader)
+          .filter(Boolean)
+          .pop() || null,
       status: latest?.status || null,
       lastSeen: latest?.observedAt || null,
       firstSeen: seen[0]?.observedAt || null
