@@ -1,4 +1,59 @@
-const root=document.getElementById('card');
-function text(tag,value,className=''){const node=document.createElement(tag);node.textContent=value;if(className)node.className=className;return node;}
-function message(state){const box=text('div','',`message ${state.state==='error'?'error':''}`);if(state.state==='loading')box.append(text('span','','pulse'));const copy=text('div','');copy.append(text('strong',state.state==='loading'?'Reading inventory item…':state.message||'No item found'),text('p',state.state==='loading'?'Local screen crop · no upload':state.hint||'Keep the cursor on the item tile and try again.'));box.append(copy);root.append(box);}
-try{const state=JSON.parse(new URLSearchParams(location.search).get('state')||'{}');if(state.state!=='result')message(state);else{if(state.grade)root.classList.add(state.grade);const head=text('div','','top'),glyph=text('span',(state.shortName||state.name).slice(0,3).toUpperCase(),'glyph'),title=text('div','','title'),detail=state.possible>1?state.shortName+' · '+state.possible+' possible matches':state.shortName||'Detected from inventory';title.append(text('strong',state.name),text('small',detail));head.append(glyph,title,text('span',state.match+'%','match'));const prices=text('div','','prices');for(const [label,value,note,best] of [['FLEA',state.flea,'24h average',false],['TRADER',state.trader,state.traderName,false],['PER SLOT',state.perSlot,state.bestSource,true]]){const box=text('div','',`price ${best?'best':''}`);box.append(text('span',label),text('strong',value),text('small',note));prices.append(box);}root.append(head,prices);}}catch{message({state:'error',message:'Price card unavailable',hint:'Open Raid Notes and try again.'});}
+const root = document.getElementById('card');
+function text(tag, value, className = '') {
+  const node = document.createElement(tag);
+  node.textContent = value;
+  if (className) node.className = className;
+  return node;
+}
+function message(state) {
+  const box = text('div', '', `message ${state.state === 'error' ? 'error' : ''}`);
+  if (state.state === 'loading') box.append(text('span', '', 'pulse'));
+  const copy = text('div', '');
+  copy.append(
+    text(
+      'strong',
+      state.state === 'loading' ? 'Reading inventory item…' : state.message || 'No item found'
+    ),
+    text(
+      'p',
+      state.state === 'loading'
+        ? 'Local screen crop · no upload'
+        : state.hint || 'Keep the cursor on the item tile and try again.'
+    )
+  );
+  box.append(copy);
+  root.append(box);
+}
+try {
+  const state = JSON.parse(new URLSearchParams(location.search).get('state') || '{}');
+  if (state.state !== 'result') message(state);
+  else {
+    if (state.grade) root.classList.add(state.grade);
+    const head = text('div', '', 'top'),
+      glyph = text('span', (state.shortName || state.name).slice(0, 3).toUpperCase(), 'glyph'),
+      title = text('div', '', 'title'),
+      detail =
+        state.possible > 1
+          ? state.shortName + ' · ' + state.possible + ' possible matches'
+          : state.shortName || 'Detected from inventory';
+    title.append(text('strong', state.name), text('small', detail));
+    head.append(glyph, title, text('span', state.match + '%', 'match'));
+    const prices = text('div', '', 'prices');
+    for (const [label, value, note, best] of [
+      ['FLEA', state.flea, '24h average', false],
+      ['TRADER', state.trader, state.traderName, false],
+      ['PER SLOT', state.perSlot, state.bestSource, true]
+    ]) {
+      const box = text('div', '', `price ${best ? 'best' : ''}`);
+      box.append(text('span', label), text('strong', value), text('small', note));
+      prices.append(box);
+    }
+    root.append(head, prices);
+  }
+} catch {
+  message({
+    state: 'error',
+    message: 'Price card unavailable',
+    hint: 'Open Raid Notes and try again.'
+  });
+}

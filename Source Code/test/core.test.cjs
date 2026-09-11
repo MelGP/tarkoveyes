@@ -53,8 +53,8 @@ test('Labs keycard legend resolves every colored-card door from bundled POIs',()
   for(const card of catalog.keycards){assert.match(card.color,/^#[0-9a-f]{6}$/i);assert.ok(card.room);assert.equal(card.iconPath,'/items/labs-keycards/'+card.id+'.webp');const icon=path.join(__dirname,'../app/assets',card.iconPath.replace(/^\/+/,''));assert.ok(fs.existsSync(icon),card.label+' icon');const bytes=fs.readFileSync(icon);assert.equal(bytes.subarray(0,4).toString(),'RIFF');assert.equal(bytes.subarray(8,12).toString(),'WEBP');assert.ok(doors.some(door=>door.keyIds.includes(card.id)),card.label+' door');}
 });
 test('Reserve chess landmarks match the building clusters identified by RB keys',()=>{
-  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8'),block=renderer.match(/reserve:\[(.*?)\n  \]/s)?.[1];assert.ok(block);
-  const entries=[...block.matchAll(/\['([^']+)',(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?),'([^']+)'/g)].map(match=>({name:match[1],x:Number(match[2]),z:Number(match[3]),piece:match[4]}));
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8'),block=renderer.match(/reserve:\s*\[(.*?)\n\s*\]/s)?.[1];assert.ok(block);
+  const entries=[...block.matchAll(/\[\s*'([^']+)',\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?),\s*'([^']+)'/g)].map(match=>({name:match[1],x:Number(match[2]),z:Number(match[3]),piece:match[4]}));
   assert.deepEqual(new Set(entries.map(item=>item.name)),new Set(['WHITE QUEEN · DOME','WHITE PAWN','BLACK PAWN','BLACK BISHOP','WHITE BISHOP','WHITE KING','BLACK KNIGHT','WHITE KNIGHT']));
   assert.ok(entries.every(item=>Number.isFinite(item.x)&&Number.isFinite(item.z)&&item.piece));
   const pois=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/poi/reserve.json'),'utf8')).pois,anchors={'WHITE QUEEN · DOME':'5da46e3886f774653b7a83fe','WHITE PAWN':'5d80ccac86f77470841ff452','BLACK PAWN':'5d80c60f86f77440373c4ece','BLACK BISHOP':'5d80c78786f774403a401e3e','WHITE BISHOP':'5d947d4e86f774447b415895','WHITE KING':'5da5cdcd86f774529238fb9b','BLACK KNIGHT':'5d80c93086f7744036212b41','WHITE KNIGHT':'5d80cbd886f77470855c26c2'};
@@ -64,7 +64,7 @@ test('every profile catalog still carries the key and item data the raid kit lis
   const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
   assert.match(renderer,/function raidKit\(/,'renderer keeps the raid kit builder');
   assert.match(renderer,/function questKeyList\(/,'quest briefs build their key list from objectives');
-  const carryTypes=[...renderer.matchAll(/(\w+):'(?:Plant|Hand in|Use)'/g)].map(match=>match[1]);
+  const carryTypes=[...renderer.matchAll(/(\w+):\s*'(?:Plant|Hand in|Use)'/g)].map(match=>match[1]);
   assert.ok(carryTypes.includes('plantItem')&&carryTypes.includes('giveItem'),'carried objective types stay mapped');
   for(const file of ['quests.json','quests-pve.json','quests-seasonal.json']){
     const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data',file),'utf8'));
@@ -200,10 +200,10 @@ test('malformed progress is preserved as a recovery file before writing',t=>{
   const dir=fixture(t);fs.writeFileSync(path.join(dir,'progress.json'),'{bad');const s=new Store(dir);assert.ok(s.error);s.write();assert.ok(fs.readdirSync(dir).some(f=>f.startsWith('progress.json.recovery-')));
 });
 test('packaged renderer blocks network and hover scan avoids game-process or mouse-hook APIs',()=>{
-  const main=fs.readFileSync(path.join(__dirname,'../main.cjs'),'utf8');assert.match(main,/nodeIntegration:false/);assert.match(main,/contextIsolation:true/);assert.match(main,/sandbox:true/);assert.match(main,/cancel:true/);
+  const main=fs.readFileSync(path.join(__dirname,'../main.cjs'),'utf8');assert.match(main,/nodeIntegration:\s*false/);assert.match(main,/contextIsolation:\s*true/);assert.match(main,/sandbox:\s*true/);assert.match(main,/cancel:\s*true/);
   assert.match(main,/refreshQuestLogs\(\)/);assert.match(main,/logRefresh/);assert.match(main,/raid-preferences/);assert.match(main,/import-catalog/);assert.match(main,/item-value-settings/);
-  assert.match(main,/ITEM_HOTKEY='Shift\+F8'/);assert.match(main,/desktopCapturer/);assert.match(main,/getCursorScreenPoint/);assert.match(main,/\.crop\(/);
-  assert.match(main,/captureCursorRegions/);assert.match(main,/width:320,height:220,scale:3/);assert.match(main,/tessedit_pageseg_mode/);assert.match(main,/clearInventoryMatch/);
+  assert.match(main,/ITEM_HOTKEY\s*=\s*'Shift\+F8'/);assert.match(main,/desktopCapturer/);assert.match(main,/getCursorScreenPoint/);assert.match(main,/\.crop\(/);
+  assert.match(main,/captureCursorRegions/);assert.match(main,/width:\s*320,\s*height:\s*220,\s*scale:\s*3/);assert.match(main,/tessedit_pageseg_mode/);assert.match(main,/clearInventoryMatch/);
   assert.doesNotMatch(main,/sendInput|OpenProcess|ReadProcessMemory|writeProcessMemory|uiohook|SetWindowsHookEx|mouse_event/i);
 });
 test('complete quest catalogs are bundled and the UI does not force a Customs-only list',()=>{
@@ -218,10 +218,17 @@ test('complete quest catalogs are bundled and the UI does not force a Customs-on
   }
   const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
   const html=fs.readFileSync(path.join(__dirname,'../app/index.html'),'utf8');
-  assert.match(renderer,/quests=\[\.\.\.allData\.quests,\.\.\.extras\]\.sort/);
-  assert.doesNotMatch(renderer,/quests=allData\.quests\.filter\(q=>q\.mapIds\.includes\('customs'\)\)/);
+  assert.match(renderer,/quests\s*=\s*\[\.\.\.allData\.quests,\s*\.\.\.extras\]\.sort/);
+  assert.doesNotMatch(renderer,/quests\s*=\s*allData\.quests\.filter\(q\s*=>\s*q\.mapIds\.includes\('customs'\)\)/);
   assert.match(html,/id="map-filter"/);assert.match(html,/value="open" selected/);assert.match(html,/value="story"/);const pathFilter=html.match(/<select id="path-filter"[\s\S]*?<\/select>/)[0];assert.doesNotMatch(pathFilter,/value="battlepass"/);
-  assert.match(html,/RAID NOTES/);assert.match(html,/v04\.css/);assert.match(html,/field-journal\.css/);
+  assert.match(html,/RAID NOTES/);
+  const sheets=[...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(match=>match[1]);
+  assert.deepEqual(sheets,['app.css','battlepass.css'],'the renderer loads the merged stylesheet and the Battle Pass layer, in that order');
+  for(const sheet of sheets)assert.ok(fs.existsSync(path.join(__dirname,'../app',sheet)),sheet+' is bundled');
+  const merged=fs.readFileSync(path.join(__dirname,'../app/app.css'),'utf8');
+  assert.match(merged,/--gold:/,'app.css keeps the palette tokens');
+  for(const retired of ['styles.css','v02.css','v03.css','v04.css','v05.css','field-journal.css'])
+    assert.ok(!fs.existsSync(path.join(__dirname,'../app',retired)),retired+' was merged into app.css and must not come back');
   assert.match(html,/id="refresh-logs"/);assert.match(html,/id="activity-dialog"/);assert.match(html,/id="import-catalog"/);assert.match(renderer,/bridge\.refreshLogs\(\)/);assert.match(renderer,/function renderMyRaid/);assert.match(renderer,/questMarkerMeta/);assert.match(renderer,/visibleRaidQuests/);assert.match(renderer,/raidPreferences/);
   for(const id of ['loot-source-status','loot-essentials','scan-tasks','items-button','items-dialog','refresh-prices','item-search','item-hotkey-enabled','item-hotkey-status','item-value-threshold','log-diagnostics','dashboard-button','add-marker','marker-dialog','marker-form','marker-name','marker-note','save-marker','layer-custom','layer-lab-keycards','layer-lab-keycard-labels','keycard-doors','keycard-labels','path-filter','export-backup','import-backup','quick-find','command-dialog','command-search','command-results','toggle-details','focus-map'])assert.match(html,new RegExp('id="'+id+'"'));
   for(const preset of ['raid','valuables','clean'])assert.match(html,new RegExp('data-layer-preset="'+preset+'"'));
@@ -230,7 +237,7 @@ test('complete quest catalogs are bundled and the UI does not force a Customs-on
   assert.match(renderer,/function centeredView/);assert.doesNotMatch(renderer,/w:300,h:180/);assert.match(renderer,/function showQuestCluster/);assert.match(renderer,/function renderLogDiagnostics/);assert.match(renderer,/itemValueThreshold/);
   assert.doesNotMatch(renderer,/orderedRaidQuests|function renderRoute|routeMode|START AREA|ROUTE ORDER/);assert.match(renderer,/function renderDashboard/);assert.match(renderer,/function runItemScan/);assert.match(renderer,/objective-counter/);assert.match(renderer,/inspectCatalog/);
   for(const fn of ['commandEntries','openCommandPalette','applyLayerPreset','setMapFocus','setDetailsCollapsed','revealMapSearch'])assert.match(renderer,new RegExp('function '+fn));
-  assert.match(renderer,/e\.ctrlKey\|\|e\.metaKey/);assert.match(renderer,/e\.key\.toLowerCase\(\)===['"]f['"]/);
+  assert.match(renderer,/e\.ctrlKey\s*\|\|\s*e\.metaKey/);assert.match(renderer,/e\.key\.toLowerCase\(\)\s*===\s*['"]f['"]/);
   assert.doesNotMatch(html,/POST-RAID REVIEW|raid-review-dialog/);assert.doesNotMatch(renderer,/openRaidReview|pendingRaidReview/);
   assert.match(renderer,/function applyQuestPathFilter/);assert.match(renderer,/q\.kappaRequired/);assert.match(renderer,/q\.lightkeeperRequired/);
   assert.match(html,/class="quest-filter-panel"/);assert.match(html,/id="filter-summary"/);
