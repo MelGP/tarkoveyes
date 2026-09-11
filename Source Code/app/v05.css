@@ -1,0 +1,226 @@
+/* Raid Notes 0.20 — full visual redesign */
+:root{
+  --bg:#050709;
+  --panel:#0e1116;
+  --panel-2:#141820;
+  --panel-3:#1a2028;
+  --line:#29313c;
+  --line-soft:#1c232c;
+  --text:#f4f6f5;
+  --muted:#84909b;
+  --muted-strong:#b5bec4;
+  --gold:#ffb84d;
+  --gold-soft:#2b2113;
+  --green:#46d39a;
+  --blue:#5ab6ff;
+  --violet:#c994ff;
+  --danger:#ff786e;
+}
+
+html,body{background:#050709}
+body{
+  overflow:hidden;
+  color:var(--text);
+  background:
+    radial-gradient(circle at 20% -10%,#1b2430 0,transparent 34%),
+    radial-gradient(circle at 100% 20%,#17241f 0,transparent 30%),
+    #050709;
+  font:12px/1.45 "Segoe UI Variable Text","Segoe UI",sans-serif;
+}
+button,select,input,textarea{font-family:inherit}
+button{border:1px solid #303946;background:#171c23;color:#cad1d5}
+button:hover{border-color:#536070;background:#202732;color:#fff}
+select,input,textarea{border-color:#303946;background:#11151b;color:#edf1ef}
+
+/* A distinct app chrome */
+.topbar{
+  position:relative;
+  height:62px;
+  padding:0 18px;
+  gap:24px;
+  background:linear-gradient(180deg,#11151bfa,#090c10f5);
+  border-bottom:1px solid #303844;
+  box-shadow:0 16px 50px #0008;
+}
+.topbar:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,#ffb84d88 24%,#46d39a55 70%,transparent)}
+.brand{min-width:164px;gap:11px;color:#fff;font-size:14px;font-weight:750;letter-spacing:2.2px}
+.brand-icon{
+  width:36px;height:36px;
+  border:1px solid #76572d;
+  border-radius:11px;
+  background:linear-gradient(145deg,#392916,#171b1c);
+  box-shadow:inset 0 1px #ffcf7a33,0 8px 24px #0007,0 0 22px #ffb84d0d;
+}
+.brand-icon .icon{width:19px;height:19px;color:#ffc464;filter:drop-shadow(0 0 6px #ffb84d55)}
+.topbar nav{height:42px;padding:4px;gap:4px;border:1px solid #252d37;border-radius:12px;background:#080b0fcc;box-shadow:inset 0 1px #ffffff08}
+.nav{height:32px;min-height:32px;padding:0 13px;gap:8px;border:1px solid transparent;border-radius:8px;color:#85919b;background:transparent;font-size:11px;font-weight:550}
+.nav .icon{width:14px;height:14px}
+.nav:hover{border-color:#2d3742;color:#e8ecea;background:#161b22}
+.nav.active{border-color:#5c4528;color:#ffd08a;background:linear-gradient(180deg,#2a2116,#191914);box-shadow:inset 0 1px #ffdc9933,0 4px 14px #0004}
+.quick-find{margin-left:3px!important;padding-left:13px!important;border-left-color:transparent!important}
+.quick-find kbd{margin-left:9px;padding:3px 6px;border:1px solid #343e49;border-radius:5px;background:#090c10;color:#78848d;font-size:7px}
+.top-end{gap:8px}
+.top-end select{height:38px;min-width:174px;padding:8px 34px 8px 12px;border:1px solid #303946;border-radius:10px;background:#12171d;color:#e7ebe9;font-size:10px;font-weight:550}
+.setup-button{width:38px;min-width:38px;height:38px;border:1px solid #303946;border-radius:10px;background:#12171d}
+.setup-button:hover{border-color:#526070;background:#1b222b}
+#about-button{color:#a9b3ba;font:700 12px Consolas,monospace}
+
+/* Floating workspace cards */
+main{
+  height:calc(100vh - 62px);
+  padding:10px;
+  gap:10px;
+  grid-template-columns:318px minmax(420px,1fr) 342px;
+  box-sizing:border-box;
+  background:transparent;
+}
+.sidebar,.map-area,.details{
+  border:1px solid #28313b;
+  border-radius:15px;
+  background:linear-gradient(180deg,#11151b,#0a0d11);
+  box-shadow:0 18px 55px #0006,inset 0 1px #ffffff08;
+}
+.sidebar{overflow:hidden;border-right:1px solid #28313b;z-index:5}
+.details{border-left:1px solid #28313b}
+.details-collapsed{grid-template-columns:318px minmax(420px,1fr) 0}
+.map-focus{padding:0;gap:0;grid-template-columns:0 minmax(0,1fr) 0}
+.map-focus .map-area{border-radius:0;border-color:#343e48}
+
+/* Sidebar header */
+.map-heading{position:relative;padding:17px 17px 13px;border-bottom:1px solid #202832;background:linear-gradient(135deg,#171c23,#0d1116)}
+.map-heading:before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:0 3px 3px 0;background:linear-gradient(#ffca70,#d8892e);box-shadow:0 0 18px #ffad3d55}
+.map-heading .eyebrow{margin:0 0 6px 2px;color:#66727c;font-size:7px;font-weight:700;letter-spacing:2.1px}
+.location-picker select{padding:0 31px 1px 2px;color:#fff;font-size:25px;font-weight:700;letter-spacing:-.7px;text-shadow:0 2px 12px #000}
+.location-picker>span{font-size:19px;color:#ffbd58}
+
+.connection-card{grid-template-columns:minmax(0,1fr) auto;gap:9px;margin:10px;padding:9px;border:1px solid #2a343e;border-radius:12px;background:linear-gradient(135deg,#141a20,#0c1116);box-shadow:inset 0 1px #ffffff06}
+.connection-head{min-height:34px;padding:0 4px;gap:10px}
+.connection-head strong{color:#e0e5e2;font-size:10px;font-weight:650}
+.connection-head small{color:#76838c;font-size:8px}
+.status-dot{width:8px;height:8px;box-shadow:0 0 0 5px #46d39a12,0 0 16px currentColor}
+.connection-actions{height:34px;grid-template-columns:auto 32px 32px}
+.connection-actions button{width:32px;height:32px;border:1px solid #313b46!important;border-radius:8px!important;background:#151b22!important;color:#98a4ac}
+.connection-actions button+button{margin-left:5px}
+.connection-actions button:first-child{width:auto;padding:0 11px;border-color:#74572e!important;color:#ffc86e;background:linear-gradient(180deg,#2b2115,#1c1913)!important;box-shadow:inset 0 1px #ffd98d22}
+.connection-actions button:hover{border-color:#586674!important;color:#fff!important;background:#222a34!important}
+
+/* Layer control as a proper drawer */
+.layer-disclosure{margin:0 10px 8px;border:1px solid #242d36;border-radius:11px;background:#0d1116}
+.layer-disclosure>summary{min-height:38px;padding:0 11px;border-radius:10px;background:linear-gradient(180deg,#151a21,#101419)}
+.summary-title{gap:9px}.summary-title .icon{width:14px;height:14px;color:#99a5ad}.summary-title .eyebrow{color:#a8b1b7;font-size:8px;font-weight:650;letter-spacing:1.6px}
+.summary-caret{color:#68747d}
+.layer-disclosure[open]{max-height:49vh;border-color:#3b4753;background:#0d1116;box-shadow:0 20px 55px #000b}
+.layers{padding:8px 9px 10px}
+.layers label{min-height:31px;padding:5px 7px;border-radius:7px;color:#b7c0c4;font-size:10px}
+.layers label:hover{background:#181e26}
+.layers input[type=checkbox]{width:15px;height:15px;border-color:#45515c;border-radius:5px;background:#080b0f}
+.layers input[type=checkbox]:checked{border-color:#ffbe59;background:linear-gradient(145deg,#ffd17e,#dd8e2d);box-shadow:0 0 12px #ffb4492b}
+.layer-presets{gap:6px;padding:3px 0 8px;background:#0d1116}
+.layer-presets button{min-height:29px;border-color:#2d3741;border-radius:8px;background:#13181f;color:#909ca4;font-weight:600}
+.layer-presets button.active{border-color:#785c32;color:#ffd084;background:#2a2115}
+.loot-layer-head{border-color:#37424d!important;background:linear-gradient(135deg,#181e25,#10151a)!important}
+.loot-intel .eyebrow{color:#ffbe5e}.loot-intel strong{color:#89969e}
+.loot-layer-head .loot-quick-actions button{min-height:30px!important;border-radius:7px!important;background:#131920!important}
+.loot-layer-options label{min-height:39px!important;border-color:#2d3741!important;border-radius:8px!important;background:#131920!important}
+.loot-layer-options label:has(input:checked){border-color:#866536!important;color:#ffd385!important;background:#2a2115!important}
+
+/* Quest workspace */
+.quest-heading{padding:5px 15px 7px}
+.quest-heading .eyebrow{color:#727f88;font-size:8px;font-weight:700;letter-spacing:2px}
+.quest-heading .count{border:1px solid #303a44;border-radius:8px;background:#171d24;color:#aeb8bd;font-size:8px}
+.search{margin:0 10px 8px}
+.search input{height:39px;padding-left:35px;border:1px solid #313b46;border-radius:10px;background:#0b0f13;color:#f2f4f3;font-size:11px;box-shadow:inset 0 1px 5px #0005}
+.search input::placeholder{color:#69757e}
+.search input:focus{border-color:#8b6734;box-shadow:0 0 0 3px #ffb84d12,inset 0 1px 5px #0005}
+.search>.icon{top:12px;left:12px;width:14px;height:14px;color:#7d8991}
+.search kbd{top:11px;right:10px;padding:2px 5px;border:1px solid #2e3842;border-radius:4px;background:#12171c}
+.quest-filter-panel{margin:0 10px 8px;border:1px solid #27313a;border-radius:10px;background:#0d1116}
+.quest-filter-panel>summary{min-height:35px;padding:0 10px;color:#7f8b94;font-size:9px}
+.quest-filter-panel>summary>span{color:#c0c7c9;font-weight:550}
+.quest-filter-panel .filters{gap:6px;padding:0 8px 8px}
+.quest-filter-panel .filters select{height:32px;border:1px solid #303a44;border-radius:8px;background:#151a21;color:#b7c0c4;font-size:9px}
+.active-map-button{min-height:42px;margin:0 10px 9px;width:calc(100% - 20px);padding:8px 11px;border:1px solid #795b30;border-radius:11px;background:linear-gradient(110deg,#302416,#171a17);color:#ffd07e;font-size:10px;font-weight:650;box-shadow:inset 0 1px #ffd58d1f,0 8px 22px #0003}
+.active-map-button:hover{border-color:#ae8242;background:linear-gradient(110deg,#3c2c19,#1b1e19)}
+.active-map-button .icon{color:#ffb84d}
+.active-map-button #active-count{min-width:24px;padding:4px 7px;border-radius:12px;background:linear-gradient(145deg,#ffd27f,#e69632);color:#201a11;font-weight:800;box-shadow:0 3px 10px #0005}
+.quest-list{padding:0 7px 7px}
+.quest-row{min-height:56px;margin:3px 0;padding:10px 10px;gap:10px;border:1px solid transparent;border-radius:10px;background:transparent}
+.quest-row:hover{border-color:#303b46;background:linear-gradient(90deg,#181e26,#12171d);transform:translateX(2px)}
+.quest-row.selected{border-color:#806039;background:linear-gradient(100deg,#302417,#171b1d);box-shadow:inset 3px 0 #ffb84d,0 8px 25px #0004}
+.quest-row .quest-status{width:7px;height:7px;margin-top:6px;border:1px solid #69757d;background:#49545c;box-shadow:0 0 0 4px #ffffff05}
+.quest-row .quest-status.active{border-color:#ffbc55;background:#ffb84d;box-shadow:0 0 0 4px #ffb84d12,0 0 12px #ffb84d55}
+.quest-row .quest-status.completed{border-color:#50d49e;background:#46d39a;box-shadow:0 0 0 4px #46d39a10}
+.quest-row strong{color:#edf1ef;font-size:11px;font-weight:650;letter-spacing:.05px}
+.quest-row small{margin-top:5px;color:#77838c;font-size:8px}
+.quest-row .log-source{border:1px solid #2e5a49;background:#13251e;color:#65d3a4}
+.sidebar-footer{padding:9px 15px 11px;border-top:1px solid #242d36;background:#090c10;color:#a3adb2}
+.progress-track{height:3px;border-radius:3px;background:#252e37}.progress-track div{height:3px;border-radius:3px;background:linear-gradient(90deg,#2ebd82,#73e2b4);box-shadow:0 0 10px #46d39a33}
+
+/* Map becomes the visual hero */
+.map-area{overflow:hidden;background:#0e1719}
+.map-toolbar{top:12px;left:12px;right:12px;min-height:50px;padding:8px 9px 8px 14px;border:1px solid #3a4650;border-radius:13px;background:linear-gradient(180deg,#11171de8,#090d11e8);box-shadow:0 16px 44px #000a,inset 0 1px #ffffff0c;backdrop-filter:blur(18px)}
+#focus-label{max-width:400px;color:#f5f7f5;font-size:11px;font-weight:650;text-shadow:0 2px 8px #000}
+.toolbar-actions{gap:6px}
+.toolbar-actions button,.floor-select{min-height:34px;border:1px solid #333e48;border-radius:9px;background:#151b22;color:#9ba6ad}
+.toolbar-actions .map-tool{min-height:34px;padding:0 10px;border-color:#333e48;background:#151b22;color:#9ba6ad;font-weight:600}
+.toolbar-actions .map-tool:hover{border-color:#566371;color:#fff;background:#202832}
+.toolbar-actions .map-tool.active{border-color:#846235;color:#ffd07e;background:#2d2216}
+#add-marker{min-height:34px;padding:0 10px;border-color:#594063;background:#211925;color:#d9aff0;font-weight:600}
+#add-marker:hover{border-color:#8a5e99;background:#302139;color:#f1d5ff}
+.floor-select{padding-left:9px}.floor-select .icon{color:#71808a}.floor-select select{color:#dce2df;font-size:9px;font-weight:550}
+#map-viewport{border-radius:14px;background:radial-gradient(circle at 48% 45%,#294346 0,#152729 48%,#081215 100%)}
+#map-viewport:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 90px #020607aa}
+#map-svg{filter:saturate(.95) contrast(1.07) brightness(.96)}
+.north{top:78px;right:18px;color:#aeb9b6;text-shadow:0 2px 8px #000}.north span{color:#fff;font-size:28px}
+.zoom-controls{right:14px;bottom:14px;border:1px solid #3a4650;border-radius:11px;box-shadow:0 16px 40px #0009}
+.zoom-controls button{width:35px;height:35px;border-color:#303b45;background:#0d1217eb;color:#c9d0d2}
+.zoom-controls button:hover{background:#202832;color:#fff}
+.position-bar{left:14px;bottom:14px;min-height:42px;padding:8px 11px;border:1px solid #3a4650;border-radius:11px;background:linear-gradient(180deg,#11171deb,#080c10eb);box-shadow:0 16px 40px #0009;backdrop-filter:blur(16px)}
+.position-icon{width:27px;height:27px;background:linear-gradient(145deg,#3a2a17,#211b12);color:#ffc15e;box-shadow:inset 0 1px #ffd78624}
+.position-bar strong{color:#dfe4e2;font-size:9px;font-weight:550}#position-age{color:#859199;font-size:8px}
+.map-popup{border:1px solid #4a5863;border-radius:12px;background:linear-gradient(160deg,#151c22f5,#090e12f5);box-shadow:0 24px 70px #000d,inset 0 1px #ffffff0c}
+.map-popup strong{color:#ffd083}.map-popup small{color:#a3afb4}
+.loot-map-marker{opacity:.88;filter:drop-shadow(0 4px 8px #000c)}
+
+/* Brief drawer */
+.details{background:linear-gradient(180deg,#131820,#0b0e13);box-shadow:-18px 0 50px #0004,inset 0 1px #ffffff08}
+.detail-empty>span{color:#ffb84d;filter:drop-shadow(0 0 20px #ffb84d33)}
+.detail-empty h2{color:#fff;font-size:24px;font-weight:650}.detail-empty p{color:#818e97;font-size:10px}
+.detail-head{padding:23px 21px 18px;border-bottom:1px solid #29323c;background:linear-gradient(145deg,#1b2028,#11151b)}
+.detail-head .eyebrow{color:#ffba55;font-weight:700}.detail-head h2{color:#fff;font-size:24px;font-weight:650}
+.pill{border-color:#3b4650;border-radius:6px;background:#11161c;color:#aab4b9}
+.detail-section{padding:18px 21px;border-bottom-color:#252e37}
+.objective{padding:10px;border:1px solid #252f38;border-radius:9px;background:#11161c}.objective p{font-size:11px}
+.objective.done{border-color:#244b3c;background:#102019}
+
+/* Modals no longer look like raw utility windows */
+dialog{border:1px solid #3b4652;border-radius:17px;background:linear-gradient(155deg,#181d24,#0d1116);box-shadow:0 35px 120px #000e,inset 0 1px #ffffff0c}
+dialog::backdrop{background:#020406d9;backdrop-filter:blur(10px) saturate(.7)}
+.dialog-header h2{color:#fff;font-weight:650}.dialog-header .eyebrow{color:#ffb956;font-weight:700}
+.close-dialog-button,.dialog-header>button{color:#aab3b8}
+.items-dialog,.command-dialog{border-radius:17px;background:linear-gradient(155deg,#171c23,#0b0f14)}
+.item-hotkey{border-color:#76572f;background:linear-gradient(100deg,#302416,#151914);box-shadow:inset 0 1px #ffdb9122}
+.item-hotkey>.icon,.item-hotkey kbd{color:#ffc76e}
+.item-search input,.command-search input{border-color:#35404b;border-radius:10px;background:#0b0f14}
+.item-card{border-color:#303a45;border-radius:11px;background:#141a21}.item-card.loot-great{border-color:#8d6b38;background:#282014}
+.dashboard-stats{gap:10px}
+.stat-card,.dashboard-panel{border-color:#303a45!important;border-radius:12px!important;background:linear-gradient(145deg,#1a2028,#12171d)!important;box-shadow:inset 0 1px #ffffff08}
+.stat-card strong{color:#ffc368!important;font-weight:650!important}
+.dashboard-link{border-radius:7px}.dashboard-link:hover{background:#202730}
+#connection-dialog .log-diagnostic{border-color:#303a45;border-radius:9px;background:#12171e}
+#connection-dialog .dialog-actions{border-top-color:#303a45;background:#10151bea}
+.primary{border-color:#d49436;background:linear-gradient(145deg,#ffd17c,#d98c2d);color:#251a0c;box-shadow:inset 0 1px #fff5c755,0 7px 20px #0005}
+.primary:hover{border-color:#ffc86a;background:linear-gradient(145deg,#ffe09c,#e9a03e);color:#1c140b}
+#toast{border:1px solid #ffd789;border-radius:10px;background:linear-gradient(145deg,#ffd986,#e6a23e);color:#20170c;box-shadow:0 18px 50px #000a}
+
+@media(max-width:1180px){
+  main{grid-template-columns:286px minmax(360px,1fr) 302px}
+  .details-collapsed{grid-template-columns:286px minmax(360px,1fr) 0}
+  .topbar{padding:0 12px;gap:14px}.brand{min-width:auto}.nav{width:34px;padding:0}.top-end select{min-width:150px}
+}
+@media(max-height:760px){
+  .topbar{height:54px}main{height:calc(100vh - 54px);padding:7px;gap:7px}
+  .map-heading{padding-top:11px;padding-bottom:9px}.location-picker select{font-size:21px}
+  .connection-card{margin-top:7px;padding:6px}.connection-head{min-height:30px}.connection-head small{display:none}
+  .layer-disclosure{margin-bottom:6px}.quest-row{min-height:51px;padding-top:8px;padding-bottom:8px}
+}

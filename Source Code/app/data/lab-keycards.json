@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "mapId": "the-lab",
+  "sources": [
+    "https://json.tarkov.dev/regular/maps",
+    "https://json.tarkov.dev/regular/items",
+    "https://assets.tarkov.dev/{item-id}-icon.webp"
+  ],
+  "keycards": [
+    {
+      "id": "5c1d0c5f86f7744bb2683cf0",
+      "name": "TerraGroup Labs keycard (Blue)",
+      "label": "BLUE",
+      "room": "Blue keycard room",
+      "color": "#3d92e8",
+      "accent": "#b9ddff",
+      "textColor": "#f4f9ff",
+      "iconPath": "/items/labs-keycards/5c1d0c5f86f7744bb2683cf0.webp"
+    },
+    {
+      "id": "5c1d0dc586f7744baf2e7b79",
+      "name": "TerraGroup Labs keycard (Green)",
+      "label": "GREEN",
+      "room": "Green keycard room",
+      "color": "#36b96c",
+      "accent": "#baf2cf",
+      "textColor": "#f2fff7",
+      "iconPath": "/items/labs-keycards/5c1d0dc586f7744baf2e7b79.webp"
+    },
+    {
+      "id": "5c1d0efb86f7744baf2e7b7b",
+      "name": "TerraGroup Labs keycard (Red)",
+      "label": "RED",
+      "room": "Laboratory security arsenal",
+      "color": "#df4d51",
+      "accent": "#ffc5c7",
+      "textColor": "#fff7f7",
+      "iconPath": "/items/labs-keycards/5c1d0efb86f7744baf2e7b7b.webp"
+    },
+    {
+      "id": "5c1e495a86f7743109743dfb",
+      "name": "TerraGroup Labs keycard (Violet)",
+      "label": "VIOLET",
+      "room": "Laboratory security post",
+      "color": "#9868dc",
+      "accent": "#dec9ff",
+      "textColor": "#fff8ff",
+      "iconPath": "/items/labs-keycards/5c1e495a86f7743109743dfb.webp"
+    },
+    {
+      "id": "5c1d0d6d86f7744bb2683e1f",
+      "name": "TerraGroup Labs keycard (Yellow)",
+      "label": "YELLOW",
+      "room": "Parking garage alarm control room",
+      "color": "#edc447",
+      "accent": "#fff0a8",
+      "textColor": "#27220f",
+      "iconPath": "/items/labs-keycards/5c1d0d6d86f7744bb2683e1f.webp"
+    },
+    {
+      "id": "5c1d0f4986f7744bb01837fa",
+      "name": "TerraGroup Labs keycard (Black)",
+      "label": "BLACK",
+      "room": "Human experiment room",
+      "color": "#14171b",
+      "accent": "#d6dce1",
+      "textColor": "#f3f5f6",
+      "iconPath": "/items/labs-keycards/5c1d0f4986f7744bb01837fa.webp"
+    },
+    {
+      "id": "5efde6b4f5448336730dbd61",
+      "name": "Keycard with a blue marking",
+      "label": "BLUE MARK",
+      "room": "Sanitar's room",
+      "color": "#e9eef2",
+      "accent": "#398ed5",
+      "textColor": "#25333c",
+      "iconPath": "/items/labs-keycards/5efde6b4f5448336730dbd61.webp"
+    },
+    {
+      "id": "6711039f9e648049e50b3307",
+      "name": "TerraGroup Labs residential unit keycard",
+      "label": "RES UNIT",
+      "room": "Residential unit",
+      "color": "#b7bdc5",
+      "accent": "#f1f4f7",
+      "textColor": "#22282d",
+      "iconPath": "/items/labs-keycards/6711039f9e648049e50b3307.webp"
+    }
+  ]
+}
