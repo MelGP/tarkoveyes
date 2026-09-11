@@ -59,6 +59,55 @@ function objectivePoints(q,onlyId=null){
   }
   return result;
 }
+function objectiveMapCounts(objectives){
+  const counts=new Map();
+  for(const o of objectives||[]){
+    for(const z of o.zones||[])if(z.mapId)counts.set(z.mapId,(counts.get(z.mapId)||0)+1);
+    for(const z of o.possibleLocations||[])if(z.mapId)counts.set(z.mapId,(counts.get(z.mapId)||0)+Math.max(1,(z.positions||[]).length));
+  }
+  return counts;
+}
+function mappedElsewhere(objectives){
+  const counts=objectiveMapCounts(objectives);counts.delete(currentMapId);
+  let best=null;
+  for(const [id,count] of counts){if(!mapDefinitions.some(map=>map.id===id))continue;if(!best||count>best.count)best={id,count};}
+  return best;
+}
+async function openQuestOnMap(q,mapId,onlyId){
+  await switchMap(mapId);
+  if(currentMapId!==mapId)return;
+  focusQuest(q,onlyId);
+}
+const carryActions={plantItem:'Plant',plantQuestItem:'Plant',giveItem:'Hand in',giveQuestItem:'Hand in',useItem:'Use'};
+function objectiveOnCurrentMap(o){return !o.mapIds?.length||o.mapIds.includes(currentMapId);}
+function collectRequirement(store,label,quest,objective,extra){
+  const entry=store.get(label)||{label,quests:new Set(),optional:true,...extra};
+  entry.quests.add(quest.name);if(!objective.optional)entry.optional=false;store.set(label,entry);
+}
+function raidKit(questList){
+  const keys=new Map(),carry=new Map();
+  for(const q of questList){
+    for(const o of q.objectives){
+      if(isDone(o)||!objectiveOnCurrentMap(o))continue;
+      for(const group of o.requiredKeys||[])if(group.length)collectRequirement(keys,group.join(' or '),q,o);
+      const action=carryActions[o.type];
+      if(action)for(const name of o.itemNames||[])collectRequirement(carry,name,q,o,{action});
+    }
+  }
+  const order=(a,b)=>a.optional===b.optional?a.label.localeCompare(b.label):a.optional?1:-1;
+  return {keys:[...keys.values()].sort(order),carry:[...carry.values()].sort(order)};
+}
+function questKeyList(q){
+  const keys=new Map();
+  for(const o of q.objectives){
+    if(isDone(o))continue;
+    for(const group of o.requiredKeys||[])if(group.length)collectRequirement(keys,group.join(' or '),q,o);
+  }
+  for(const k of q.neededKeys||[])if(![...keys.keys()].some(label=>label.includes(k.name)))keys.set(k.name,{label:k.name,optional:false,quests:new Set()});
+  const mapsByName=new Map((q.neededKeys||[]).map(k=>[k.name,k.mapIds||[]]));
+  for(const entry of keys.values())entry.maps=[...new Set(entry.label.split(' or ').flatMap(name=>mapsByName.get(name)||[]))];
+  return [...keys.values()].sort((a,b)=>a.optional===b.optional?a.label.localeCompare(b.label):a.optional?1:-1);
+}
 function baseFloor(){
   if(mapDefinition.baseAsset.type==='image'){const first=mapDefinition.floors.find(item=>item.asset);if(first)return first.id;}
   return mapDefinition.baseFloor?.id||mapDefinition.baseAsset.baseLayer||'base';
@@ -137,13 +186,28 @@ function renderDetail(){
   if(!selected)return;const q=selected,panel=$('details');panel.replaceChildren();
   const head=el('div','detail-head'),titleRow=el('div','detail-title-row');titleRow.append(el('h2','',q.name));const favorite=el('button','favorite-button',(profile().favorites||[]).includes(q.id)?'★':'☆');favorite.title='Favorite quest';favorite.setAttribute('aria-label','Favorite '+q.name);favorite.onclick=async()=>{const favorites=new Set(profile().favorites||[]);favorites.has(q.id)?favorites.delete(q.id):favorites.add(q.id);profile().favorites=[...favorites];await bridge.questMeta({mode:data.mode,id:q.id,favorite:favorites.has(q.id)});renderDetail();renderList();};titleRow.append(favorite);head.append(el('span','eyebrow',q.traderName.toUpperCase()+' / QUEST BRIEF'),titleRow);
   const meta=el('div','detail-meta');meta.append(el('span','pill',questMaps(q)),el('span','pill',data.mode.toUpperCase()));if(q.minPlayerLevel>0)meta.append(el('span','pill','Level '+q.minPlayerLevel));if(source(q)==='logs')meta.append(el('span','pill log-source','Updated from logs'));head.append(meta);
-  const mapPoints=objectivePoints(q),currentName=mapName(currentMapId);const focus=el('button','primary',mapPoints.length?'Show objectives on '+currentName+' ↗':'No '+currentName+' map point');focus.disabled=!mapPoints.length;focus.onclick=()=>focusQuest(q);head.append(focus);
+  const mapPoints=objectivePoints(q),currentName=mapName(currentMapId),elsewhere=mapPoints.length?null:mappedElsewhere(q.objectives);
+  const focus=el('button','primary',mapPoints.length?'Show objectives on '+currentName+' ↗':elsewhere?'Open on '+mapName(elsewhere.id)+' ↗':'No fixed map point');
+  focus.disabled=!mapPoints.length&&!elsewhere;
+  if(elsewhere)focus.title='Switch the tactical map to '+mapName(elsewhere.id)+' and show this quest';
+  focus.onclick=elsewhere?()=>openQuestOnMap(q,elsewhere.id):()=>focusQuest(q);
+  head.append(focus);
   const stateRow=el('div','progress-control');stateRow.append(el('span','','My progress'));
   const select=el('select');select.id='quest-state';select.setAttribute('aria-label','Quest status');
   for(const [value,label] of [['untracked','Untracked'],['active','Active'],['failed','Failed'],['completed','Completed']]){const o=el('option','',label);o.value=value;select.append(o);}select.value=status(q);
   select.onchange=async()=>{try{await changeProgress({type:'quest',id:q.id,value:select.value});renderList();renderMarkers();toast('Quest progress saved locally.');}catch{select.value=status(q);toast('Could not save progress. Check available disk space.');}};
   stateRow.append(select);head.append(stateRow);panel.append(head);
-  if(q.neededKeys?.length){const gear=el('div','detail-section');gear.append(el('div','section-title','KEYS TO BRING'));q.neededKeys.forEach(k=>gear.append(el('p','requirement','⚿ '+k.name)));gear.append(el('small','', 'Some keys may apply to optional objectives.'));panel.append(gear);}
+  const questKeys=questKeyList(q);
+  if(questKeys.length){
+    const gear=el('div','detail-section');gear.append(el('div','section-title','KEYS TO BRING'));
+    questKeys.forEach(k=>{
+      const row=el('p','requirement'+(k.optional?' optional-requirement':''));row.append(uiIcon('keycard'),el('span','',k.label));
+      const meta=[...(q.mapIds?.length>1?k.maps.map(mapName):[]),...(k.optional?['optional objective']:[])];
+      if(meta.length)row.append(el('small','',meta.join(' · ')));
+      gear.append(row);
+    });
+    gear.append(el('small','','Keys for objectives you already confirmed are not listed.'));panel.append(gear);
+  }
   const section=el('div','detail-section'),title=el('div','section-title');title.append(el('span','eyebrow','OBJECTIVES'),el('span','count',q.objectives.filter(isDone).length+' / '+q.objectives.length));section.append(title);
   const objectiveMeter=el('progress','objective-meter');objectiveMeter.max=Math.max(1,q.objectives.length);objectiveMeter.value=q.objectives.filter(isDone).length;objectiveMeter.setAttribute('aria-label','Completed objectives');section.append(objectiveMeter);
   q.objectives.forEach((o,i)=>{
@@ -156,7 +220,10 @@ function renderDetail(){
     if(o.itemNames?.length)body.append(el('small','','Items: '+o.itemNames.join(' · ')));
     if(o.requiredKeys?.length)body.append(el('small','','Keys: '+o.requiredKeys.map(group=>group.join(' or ')).join(' + ')));
     const pts=objectivePoints(q,o.id);
-    if(pts.length){const b=el('button','',pts.some(p=>p.candidate)?'⌖ View possible location'+(pts.length>1?'s':''):'⌖ View on map');b.onclick=()=>focusQuest(q,o.id);body.append(b);}else body.append(el('small','','No fixed '+currentName+' location in this dataset.'));
+    if(pts.length){const b=el('button','',pts.some(p=>p.candidate)?'⌖ View possible location'+(pts.length>1?'s':''):'⌖ View on map');b.onclick=()=>focusQuest(q,o.id);body.append(b);}
+    else{const other=mappedElsewhere([o]);
+      if(other){const b=el('button','','⌖ View on '+mapName(other.id)+' ↗');b.title='Switch the tactical map to '+mapName(other.id)+' and show this objective';b.onclick=()=>openQuestOnMap(q,other.id,o.id);body.append(b);}
+      else body.append(el('small','','No fixed '+currentName+' location in this dataset.'));}
     if(progress.target>1){const counter=el('div','objective-counter'),minus=el('button','','−'),value=el('strong','',progress.value+' / '+progress.target),plus=el('button','','+');minus.setAttribute('aria-label','Decrease objective progress');plus.setAttribute('aria-label','Increase objective progress');minus.disabled=progress.value<=0;plus.disabled=progress.value>=progress.target;const set=async next=>{try{await changeProgress({type:'objective-counter',id:o.id,value:next,target:progress.target,confirmed:next>=progress.target&&progress.confirmed,source:'manual'});renderDetail();renderMarkers();}catch{toast('Could not save the counter.');}};minus.onclick=()=>set(Math.max(0,progress.value-1));plus.onclick=()=>set(Math.min(progress.target,progress.value+1));counter.append(minus,value,plus);if(progress.source==='ocr')counter.append(el('small',progress.confirmed?'confirmed':'pending-review',progress.confirmed?'Confirmed from review':'OCR suggestion · confirm after raid'));body.append(counter);}
     row.append(check,body);section.append(row);
   });panel.append(section);
@@ -176,7 +243,8 @@ function focusQuest(q,onlyId){
   const maps=pts.map(point);const minX=Math.min(...maps.map(p=>p.x)),maxX=Math.max(...maps.map(p=>p.x)),minY=Math.min(...maps.map(p=>p.y)),maxY=Math.max(...maps.map(p=>p.y));
   const w=Math.max(180,(maxX-minX)*1.6),h=Math.max(100,(maxY-minY)*1.6);
   view={x:(minX+maxX)/2-w/2,y:(minY+maxY)/2-h/2,w,h};applyFloor(floorFor(pts[0]));setView();
-  $('focus-label').textContent=q.name+' · '+pts.length+' points';toast('Showing '+q.name+' · '+pts.length+' map points.');
+  const label=pts.length+' point'+(pts.length===1?'':'s');
+  $('focus-label').textContent=q.name+' · '+label;toast('Showing '+q.name+' · '+label+' on the map.');
 }
 function markerScale(){const box=$('map-svg').getBoundingClientRect();return Math.max(view.w/box.width,view.h/box.height);}
 function makeMarker(p,label,color,shape='extract',candidate=false,number=null){
@@ -356,7 +424,7 @@ function renderMyRaid(focus=false){
   const currentName=mapName(currentMapId),active=activeMapQuests(),visible=visibleRaidQuests(),hidden=hiddenOnCurrentMap(),pts=visible.flatMap(q=>objectivePoints(q)),p=ensureRaidData();
   const panel=$('details');panel.replaceChildren();const box=el('div','active-summary');
   box.append(el('span','eyebrow','MY RAID'),el('h2','',active.length+' on '+currentName));
-  box.append(el('p','raid-stats',visible.length+' shown · '+pts.length+' map points'));
+  box.append(el('p','raid-stats',visible.length+' shown · '+pts.length+' map point'+(pts.length===1?'':'s')));
   if(!active.length)box.append(el('p','','No active '+currentName+' quests are known yet. Update the logs or mark a quest Active manually.'));
   if(active.length)box.append(el('p','raid-help','Use each checkbox to show or hide that quest on the map.'));
   active.forEach(q=>{
@@ -368,7 +436,24 @@ function renderMyRaid(focus=false){
     open.append(el('small','raid-floor',points?(points+' map point'+(points===1?'':'s')+(floors.length?' · '+floors.join(', '):'')):'No fixed map point'));
     open.onclick=()=>{selectQuest(q);if(points)focusQuest(q);};card.append(toggle,number,open);box.append(card);
   });
-  panel.append(box);$('focus-label').textContent='My Raid · '+pts.length+' map points';if(focus)focusRaid(visible);
+  panel.append(box);
+  const kit=raidKit(visible);
+  if(kit.keys.length||kit.carry.length){
+    const gear=el('div','detail-section raid-kit'),title=el('div','section-title');
+    title.append(el('span','eyebrow','BRING TO RAID'),el('span','count',String(kit.keys.length+kit.carry.length)));
+    gear.append(title);
+    const line=(entry,iconName,prefix)=>{
+      const row=el('div','raid-kit-row'+(entry.optional?' optional-requirement':'')),head=el('div','raid-kit-head');
+      head.append(uiIcon(iconName),el('strong','',(prefix||'')+entry.label));
+      row.append(head,el('small','',[...entry.quests].join(' · ')+(entry.optional?' · optional objective':'')));
+      gear.append(row);
+    };
+    kit.keys.forEach(entry=>line(entry,'keycard'));
+    kit.carry.forEach(entry=>line(entry,'tag',entry.action+': '));
+    gear.append(el('small','raid-kit-note','From the objectives still open on '+currentName+' for the quests shown above.'));
+    panel.append(gear);
+  }
+  $('focus-label').textContent='My Raid · '+pts.length+' map point'+(pts.length===1?'':'s');if(focus)focusRaid(visible);
 }
 function showActiveQuests(){
   const currentName=mapName(currentMapId),active=activeMapQuests();myRaidOpen=true;selected=null;setDetailsCollapsed(false);$('map-filter').value=currentMapId;$('status-filter').value='active';renderList();renderMyRaid(true);renderMarkers();
@@ -441,9 +526,52 @@ function renderActivity(){
 }
 function renderDashboard(){
   const p=profile(),content=$('dashboard-content'),done=quests.filter(q=>status(q)==='completed').length,active=quests.filter(q=>status(q)==='active').length,failed=quests.filter(q=>status(q)==='failed').length,objectiveTotal=quests.reduce((n,q)=>n+q.objectives.length,0),objectiveDone=quests.reduce((n,q)=>n+q.objectives.filter(isDone).length,0);content.replaceChildren();$('dashboard-title').textContent=data.mode==='seasonal'?'Kord Breach overview':data.mode.toUpperCase()+' overview';$('dashboard-sub').textContent=done+' of '+quests.length+' quests completed';const stats=el('div','dashboard-stats');for(const [value,label] of [[done,'Completed quests'],[active,'Active quests'],[objectiveDone+' / '+objectiveTotal,'Objectives'],[(p.raidHistory||[]).length,'Raids recorded']]){const card=el('div','stat-card');card.append(el('strong','',String(value)),el('small','',label));stats.append(card);}content.append(stats);
-  const progress=el('div','dashboard-panel');progress.append(el('h3','','Progress'));for(const [label,value,total,color] of [['Quests',done,quests.length,'#97d5af'],['Objectives',objectiveDone,objectiveTotal,'#f4c980'],['Tracked quests',active+done+failed,quests.length,'#83c8e8']]){const row=el('div','dashboard-progress');row.append(el('span','',label),el('small','',value+' / '+total));const track=el('div','mini-track'),fill=el('i');fill.style.width=(total?value/total*100:0)+'%';fill.style.background=color;track.append(fill);row.append(track);progress.append(row);}content.append(progress);
+  renderNextSteps(content);
+  const kappa=collectorPath(),lightkeeper=lightkeeperPath();
+  const routeRow=(set,color)=>[quests.filter(q=>set.has(q.id)&&status(q)==='completed').length,set.size,color];
+  const progress=el('div','dashboard-panel');progress.append(el('h3','','Progress'));
+  if(kappa.size||lightkeeper.size)progress.append(el('p','panel-note','Route totals follow the Kappa and Lightkeeper flags in the bundled tarkov.dev catalog ('+allData.generatedAt.slice(0,10)+').'));
+  for(const [label,value,total,color] of [['Quests',done,quests.length,'#97d5af'],['Objectives',objectiveDone,objectiveTotal,'#f4c980'],['Tracked quests',active+done+failed,quests.length,'#83c8e8'],['Kappa route',...routeRow(kappa,'#d8b06a')],['Lightkeeper route',...routeRow(lightkeeper,'#9fb8d8')]].filter(row=>row[2]>0)){const row=el('div','dashboard-progress');row.append(el('span','',label),el('small','',value+' / '+total));const track=el('div','mini-track'),fill=el('i');fill.style.width=(total?value/total*100:0)+'%';fill.style.background=color;track.append(fill);row.append(track);progress.append(row);}content.append(progress);
   const byTrader=el('div','dashboard-panel');byTrader.append(el('h3','','Trader progress'));const traders=[...new Set(quests.map(q=>q.traderName))].sort();for(const trader of traders){const list=quests.filter(q=>q.traderName===trader),complete=list.filter(q=>status(q)==='completed').length,row=el('button','dashboard-link');row.append(el('span','',trader),el('small','',complete+' / '+list.length));row.onclick=()=>{$('dashboard-dialog').close();$('trader').value=trader;renderList();};byTrader.append(row);}content.append(byTrader);
   const history=el('div','dashboard-panel raid-history');history.append(el('h3','','Recent raids'));if(!(p.raidHistory||[]).length)history.append(el('p','activity-empty','A raid will appear here when the local log observer sees it start.'));for(const raid of (p.raidHistory||[]).slice(0,12)){const row=el('div','history-row'),elapsed=raid.endedAt&&raid.startedAt?Math.max(1,Math.round((raid.endedAt-raid.startedAt)/60000))+' min':raid.status==='started'?'In progress':'Finished';row.append(el('strong','',mapName(raid.map||'unknown')),el('span','',raid.role?.toUpperCase()||'PMC'),el('small','',new Date(raid.startedAt).toLocaleString()+' · '+elapsed));history.append(row);}content.append(history);
+}
+function readyToStart(){
+  const done=id=>profile().quests[id]==='completed';
+  return quests.filter(q=>{
+    if(status(q)!=='untracked')return false;
+    return (q.requirements||[]).every(req=>{const id=requirementId(req);return !id||done(id);});
+  }).sort((a,b)=>(a.chainDepth??99)-(b.chainDepth??99)||a.name.localeCompare(b.name));
+}
+function openObjectiveCount(q){return q.objectives.filter(o=>!isDone(o)).length;}
+function mapWorkload(){
+  const rows=new Map();
+  for(const q of quests.filter(q=>status(q)==='active'))
+    for(const id of q.mapIds?.length?q.mapIds:[])
+      {const row=rows.get(id)||{id,quests:0,objectives:0};row.quests++;row.objectives+=q.objectives.filter(o=>!isDone(o)&&(!o.mapIds?.length||o.mapIds.includes(id))).length;rows.set(id,row);}
+  return [...rows.values()].filter(row=>mapDefinitions.some(map=>map.id===row.id)).sort((a,b)=>b.quests-a.quests||a.id.localeCompare(b.id));
+}
+function dashboardPanel(title,note){const panel=el('div','dashboard-panel');panel.append(el('h3','',title));if(note)panel.append(el('p','panel-note',note));return panel;}
+function renderNextSteps(content){
+  const ready=readyToStart(),workload=mapWorkload();
+  if(workload.length){
+    const panel=dashboardPanel('Where to go next','Active quests and the objectives still open on each map.');
+    for(const row of workload){
+      const link=el('button','dashboard-link');
+      link.append(el('span','',mapName(row.id)),el('small','',row.quests+' quest'+(row.quests===1?'':'s')+' · '+row.objectives+' objective'+(row.objectives===1?'':'s')));
+      link.onclick=async()=>{$('dashboard-dialog').close();await switchMap(row.id,{filterQuests:true});showActiveQuests();};
+      panel.append(link);
+    }
+    content.append(panel);
+  }
+  const panel=dashboardPanel('Ready to start',ready.length+' quest'+(ready.length===1?'':'s')+' have every prerequisite completed and are not tracked yet.');
+  if(!ready.length)panel.append(el('p','activity-empty','Nothing is waiting. Mark a quest Active or refresh the game logs.'));
+  for(const q of ready.slice(0,8)){
+    const link=el('button','dashboard-link');
+    link.append(el('span','',q.name),el('small','',q.traderName+' · '+questMaps(q)));
+    link.onclick=()=>{$('dashboard-dialog').close();selectQuest(q);};
+    panel.append(link);
+  }
+  content.append(panel);
 }
 function openDashboard(){renderDashboard();$('dashboard-dialog').showModal();}
 function price(value){return Number.isFinite(value)?new Intl.NumberFormat('en-US').format(value)+' ₽':'—';}

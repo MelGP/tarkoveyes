@@ -50,3 +50,23 @@ dialog{width:min(720px,calc(100vw - 40px));max-height:calc(100vh - 48px);padding
 .detail-empty{display:block;min-height:0;text-align:left}.detail-empty>span{margin-left:11px}.detail-empty p{max-width:none;margin:0}.detail-empty .quiet-card{display:block}.detail-empty .quiet-card p{margin-top:10px}
 .command-result{min-height:59px}.command-result.selected{background:#393425;border-color:#968056}.command-copy strong{font-size:13px}.command-copy small{font-size:11px;color:#aab3a4}.command-type{font-size:9px;color:#b7bda9;border-color:#4b5241;background:#293024}.command-search{background:#202326}.command-glyph{background:#293024;border-color:#515640;color:#dfc28c}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+
+/* Dashboard: what to do next, not only what has been counted. */
+.dashboard-panel .panel-note{margin:-4px 0 12px;color:var(--muted);font-size:10px;line-height:1.5}
+.dashboard-link small{color:var(--muted)}
+
+/* Raid kit: keys and items the open objectives on this map ask you to carry. */
+.raid-kit-row{display:grid;gap:3px;margin-bottom:7px;padding:9px 11px;border:1px solid var(--line-soft);border-left:2px solid var(--gold);border-radius:7px;background:#1d1f22}
+.raid-kit-head{display:flex;align-items:center;gap:8px}
+.raid-kit-head .icon{width:14px;height:14px;color:var(--gold)}
+.raid-kit-row strong{font-size:12px;font-weight:600;color:var(--text)}
+.raid-kit-row small{color:var(--muted);font-size:10px;line-height:1.45}
+.raid-kit-row.optional-requirement{border-left-color:#4d4f52}
+.raid-kit-row.optional-requirement strong{color:var(--muted-strong);font-weight:500}
+.raid-kit-row.optional-requirement .icon{color:var(--muted)}
+.raid-kit-note{display:block;margin-top:9px;color:var(--muted);font-size:10px;line-height:1.5}
+.requirement{display:flex;align-items:center;gap:8px}
+.requirement .icon{width:14px;height:14px;color:var(--gold)}
+.requirement.optional-requirement{color:var(--muted-strong)}
+.requirement.optional-requirement .icon{color:var(--muted)}
+.requirement small{margin-left:7px;color:var(--muted);font-size:10px}

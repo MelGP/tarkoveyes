@@ -60,6 +60,27 @@ test('Reserve chess landmarks match the building clusters identified by RB keys'
   const pois=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/poi/reserve.json'),'utf8')).pois,anchors={'WHITE QUEEN · DOME':'5da46e3886f774653b7a83fe','WHITE PAWN':'5d80ccac86f77470841ff452','BLACK PAWN':'5d80c60f86f77440373c4ece','BLACK BISHOP':'5d80c78786f774403a401e3e','WHITE BISHOP':'5d947d4e86f774447b415895','WHITE KING':'5da5cdcd86f774529238fb9b','BLACK KNIGHT':'5d80c93086f7744036212b41','WHITE KNIGHT':'5d80cbd886f77470855c26c2'};
   for(const item of entries){const anchor=pois.find(poi=>poi.keyIds?.includes(anchors[item.name]));assert.ok(anchor,item.name+' RB-key anchor');assert.ok(Math.hypot(item.x-anchor.position.x,item.z-anchor.position.z)<28,item.name+' stays on its verified building cluster');}
 });
+test('every profile catalog still carries the key and item data the raid kit lists',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  assert.match(renderer,/function raidKit\(/,'renderer keeps the raid kit builder');
+  assert.match(renderer,/function questKeyList\(/,'quest briefs build their key list from objectives');
+  const carryTypes=[...renderer.matchAll(/(\w+):'(?:Plant|Hand in|Use)'/g)].map(match=>match[1]);
+  assert.ok(carryTypes.includes('plantItem')&&carryTypes.includes('giveItem'),'carried objective types stay mapped');
+  for(const file of ['quests.json','quests-pve.json','quests-seasonal.json']){
+    const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data',file),'utf8'));
+    let groups=0,carried=0;
+    for(const quest of catalog.quests)for(const objective of quest.objectives){
+      for(const group of objective.requiredKeys||[]){
+        assert.ok(Array.isArray(group)&&group.length,file+': '+quest.name+' has an empty key group');
+        assert.ok(group.every(name=>typeof name==='string'&&name.trim()),file+': '+quest.name+' has a blank key name');
+        groups++;
+      }
+      if(carryTypes.includes(objective.type)&&(objective.itemNames||[]).length)carried++;
+    }
+    assert.ok(groups>=50,file+' lost its objective key requirements ('+groups+')');
+    assert.ok(carried>=200,file+' lost the item names of carried objectives ('+carried+')');
+  }
+});
 test('log parser limits itself to map/lifecycle records',()=>{
   assert.deepEqual(parseLogLine('x|application|scene preset path:maps/customs_preset.bundle rcid:bigmap.scenespreset.asset'),{type:'map',map:'customs'});
   assert.deepEqual(parseLogLine('x Location: woods, state ready'),{type:'map',map:'woods'});
