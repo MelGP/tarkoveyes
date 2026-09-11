@@ -100,7 +100,7 @@ test('quest notification parser accepts only identified lifecycle events',()=>{
   const completed=prefix+JSON.stringify({eventId:'event-1',message:{type:12,dt:1788552000,text:'quest started',templateId:'665eec1f5e47a79f8605565a successMessageText'}},null,2)+'\n';
   const unrelated=prefix+JSON.stringify({eventId:'event-x',message:{type:11,dt:1788552000,text:'quest started',templateId:'665eec1f5e47a79f8605565a 0'}},null,2)+'\n';
   const unidentified=prefix+JSON.stringify({eventId:'event-2',message:{type:10,dt:1788552001,text:'quest started'}},null,2)+'\n';
-  assert.deepEqual(parseQuestNotifications(completed+unrelated+unidentified),[{type:'quest',id:'665eec1f5e47a79f8605565a',status:'completed',eventId:'event-1',observedAt:1788552000000}]);
+  assert.deepEqual(parseQuestNotifications(completed+unrelated+unidentified),[{type:'quest',id:'665eec1f5e47a79f8605565a',status:'completed',trader:null,eventId:'event-1',observedAt:1788552000000}]);
   assert.deepEqual(parseQuestNotifications(prefix+'{broken json}\n'),[]);
 });
 test('full log refresh reads every session and keeps profiles separate',async t=>{
@@ -442,4 +442,151 @@ test('switch chains resolve to the extracts and switches they operate',()=>{
   assert.ok(effects>=15,'switch effects are still recorded ('+effects+')');
   assert.ok(toExtract>=8,'switches that open an extract are the useful ones ('+toExtract+')');
   assert.ok(chained.includes('reserve/D-2 Power Switch'),'the D-2 two-step chain must survive, it is what the popup explains');
+});
+test('every trader in the catalogs has a bundled portrait, with initials as the fallback',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  assert.match(renderer,/function traderBadge\(/);
+  assert.match(renderer,/function traderInitials\(/,'tracks with no trader still need a badge');
+  assert.match(renderer,/image\.onerror = \(\) => \{/,'a missing portrait must fall back, not leave an empty square');
+  const doc=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/traders.json'),'utf8'));
+  const referenced=new Map();
+  for(const file of ['quests.json','quests-pve.json','quests-seasonal.json']){
+    const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data',file),'utf8'));
+    for(const quest of catalog.quests)if(quest.traderId)referenced.set(quest.traderId,quest.traderName);
+  }
+  assert.ok(referenced.size>=11,'the catalogs still name their traders ('+referenced.size+')');
+  for(const [id,name] of referenced){
+    const entry=doc.traders[id];
+    assert.ok(entry,name+' ('+id+') has no portrait entry');
+    assert.equal(entry.name,name);
+    assert.match(entry.image,/^assets\/traders\/[0-9a-f]{24}\.webp$/,name+' portrait path');
+    const file=path.join(__dirname,'../app/assets',entry.image.replace(/^assets\//,''));
+    assert.ok(fs.existsSync(file),name+' portrait is not bundled');
+    const bytes=fs.readFileSync(file);
+    assert.ok(bytes.length>200,name+' portrait is suspiciously small');
+    assert.equal(bytes.subarray(0,4).toString(),'RIFF',name+' portrait is not a WebP');
+    assert.equal(bytes.subarray(8,12).toString(),'WEBP',name+' portrait is not a WebP');
+  }
+  // The special tracks have no trader and must keep working through the fallback.
+  const tracks=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/special-tracks.json'),'utf8'));
+  const trackTraders=[...new Set((tracks.quests||[]).map(quest=>quest.traderId).filter(Boolean))];
+  assert.ok(trackTraders.length,'special tracks still declare a track name');
+  for(const id of trackTraders)
+    assert.ok(!doc.traders[id],'"'+id+'" is a track, not a trader, and must fall back to initials');
+});
+test('keys are shown with the image the game uses',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  assert.match(renderer,/function keyImage\(/);
+  assert.match(renderer,/function keyIconFor\(/);
+  assert.match(renderer,/image\.onerror = \(\) => image\.replaceWith\(uiIcon\('keycard'\)\)/,'a missing key image must fall back to the glyph');
+  const keys=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/keys.json'),'utf8')).keys;
+  const entries=Object.entries(keys);
+  assert.ok(entries.length>=190,'the key catalogue still covers the doors and quests ('+entries.length+')');
+  let withIcon=0;
+  for(const [id,key] of entries){
+    if(!key.icon)continue;
+    withIcon++;
+    assert.equal(key.icon,'assets/keys/'+id+'.webp',key.name+' icon path');
+    const file=path.join(__dirname,'../app/assets/keys',id+'.webp');
+    assert.ok(fs.existsSync(file),key.name+' icon is not bundled');
+    const bytes=fs.readFileSync(file);
+    assert.ok(bytes.length>200,key.name+' icon is suspiciously small');
+    assert.equal(bytes.subarray(0,4).toString(),'RIFF',key.name+' icon is not a WebP');
+    assert.equal(bytes.subarray(8,12).toString(),'WEBP',key.name+' icon is not a WebP');
+  }
+  assert.equal(withIcon,entries.length,'every key in the catalogue carries its image');
+  // Nothing bundled should be orphaned either.
+  const onDisk=fs.readdirSync(path.join(__dirname,'../app/assets/keys')).filter(name=>name.endsWith('.webp'));
+  assert.equal(onDisk.length,entries.length,'no stray key images are bundled');
+});
+test('quest pictures and boss portraits are bundled and wired',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  assert.match(renderer,/questImages\[q\.id\]/,'the brief shows the picture the game uses');
+  assert.match(renderer,/hero\.onerror = \(\) => hero\.remove\(\)/,'a missing picture must not leave a broken image');
+  assert.match(renderer,/function renderBosses\(/,'boss zones have their own layer');
+  assert.match(renderer,/bossCatalog\[group\.boss\]/,'the layer draws the portrait');
+  assert.doesNotMatch(renderer,/landmarkText\([^)]*boss/,'a portrait must not depend on a landmark label winning its name');
+  const images=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/quest-images.json'),'utf8')).images;
+  const bosses=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/bosses.json'),'utf8')).bosses;
+  const magic=file=>{
+    const bytes=fs.readFileSync(file);
+    assert.ok(bytes.length>500,file+' is suspiciously small');
+    const webp=bytes.subarray(0,4).toString()==='RIFF'&&bytes.subarray(8,12).toString()==='WEBP';
+    const png=bytes.subarray(1,4).toString()==='PNG';
+    assert.ok(webp||png,file+' is not an image');
+  };
+  let checked=0;
+  for(const [id,relative] of Object.entries(images)){
+    assert.equal(relative,'assets/quests/'+id+'.webp');
+    const file=path.join(__dirname,'../app/assets/quests',id+'.webp');
+    assert.ok(fs.existsSync(file),'quest picture missing for '+id);
+    if(checked++<25)magic(file);
+  }
+  assert.ok(Object.keys(images).length>=500,'the quest pictures are still bundled ('+Object.keys(images).length+')');
+  // Every boss the POIs name must have a portrait, or the landmark silently loses it.
+  const named=new Set();
+  for(const file of fs.readdirSync(path.join(__dirname,'../app/data/poi')))
+    for(const poi of JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/poi',file),'utf8')).pois)
+      if(poi.kind==='boss-zone'&&poi.bossName)named.add(poi.bossName);
+  for(const name of named){
+    const entry=bosses[name];
+    assert.ok(entry,'no portrait entry for boss '+name);
+    const file=path.join(__dirname,'../app/assets',entry.image.replace(/^assets\//,''));
+    assert.ok(fs.existsSync(file),name+' portrait is not bundled');
+    magic(file);
+  }
+  assert.equal(Object.keys(bosses).length,named.size,'the boss catalogue matches the zones exactly');
+});
+test('boss spawn chances follow the profile in play',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  assert.match(renderer,/bossSpawnRates\?\.modes\?\.\[data\.mode\]/,'the rate must be read for the selected mode');
+  assert.match(renderer,/function bossRateNote\(/,'the popup says which mode the figure belongs to');
+  const doc=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/boss-spawns.json'),'utf8'));
+  for(const mode of ['pvp','pve','seasonal'])assert.ok(doc.modes[mode],'no rates for '+mode);
+  const maps=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/maps.json'),'utf8')).map(map=>map.id);
+  for(const [mapId,bosses] of Object.entries(doc.modes.pvp)){
+    assert.ok(maps.includes(mapId),'rates name a map this build does not bundle: '+mapId);
+    for(const [mob,chance] of Object.entries(bosses)){
+      assert.equal(typeof mob,'string');
+      assert.ok(chance>0&&chance<=1,mapId+'/'+mob+' chance out of range: '+chance);
+    }
+  }
+  // The whole point is that the modes differ; if a refresh collapses them the
+  // app is quietly showing everyone the same number again.
+  let differences=0;
+  for(const [mapId,bosses] of Object.entries(doc.modes.pvp))
+    for(const [mob,chance] of Object.entries(bosses))
+      if(doc.modes.pve[mapId]?.[mob]!==undefined&&Math.abs(doc.modes.pve[mapId][mob]-chance)>0.001)differences++;
+  assert.ok(differences>=10,'PvP and PvE rates should still differ in several places, found '+differences);
+  assert.match(doc.notice,/Seasonal/,'the seasonal provenance is stated');
+  if(doc.seasonalSource==='pvp')
+    assert.deepEqual(doc.modes.seasonal,doc.modes.pvp,'a seasonal fallback must be exactly the PvP table, not an invented one');
+  // Every boss the zones name should be priced by the table, or the marker
+  // silently falls back to the single snapshot in the POI file.
+  const priced=new Set(Object.values(doc.modes.pvp).flatMap(bosses=>Object.keys(bosses)));
+  const zoneBosses=new Set();
+  for(const file of fs.readdirSync(path.join(__dirname,'../app/data/poi')))
+    for(const poi of JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/poi',file),'utf8')).pois)
+      if(poi.kind==='boss-zone'&&poi.bossId)zoneBosses.add(poi.bossId);
+  const covered=[...zoneBosses].filter(id=>priced.has(id));
+  assert.ok(covered.length>=8,'the table should price most bosses the zones name ('+covered.length+' of '+zoneBosses.size+')');
+});
+test('quest events name their trader so unlisted quests can still be identified',()=>{
+  const core=fs.readFileSync(path.join(__dirname,'../core.cjs'),'utf8');
+  assert.match(core,/trader: \/\^\[a-f0-9\]\{24\}\$\/i\.test/,'the parser reads the notification uid');
+  const main=fs.readFileSync(path.join(__dirname,'../main.cjs'),'utf8');
+  assert.match(main,/const unknownQuests = unknownQuestIds\.map/,'the scan reports details, not just ids');
+  assert.match(main,/unknownQuests,/,'and returns them');
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  assert.match(renderer,/unknownQuestDetails = result\.unknownQuests/);
+  assert.doesNotMatch(renderer,/newer quest/,'they are not newer: the logs reach back to earlier versions');
+  const html=fs.readFileSync(path.join(__dirname,'../app/index.html'),'utf8');
+  assert.match(html,/id="catalog-unknown"/);
+  const sample='2026-09-01 17:14:39.000 Got notification | ChatMessageReceived\n'+
+    JSON.stringify({eventId:'e1',message:{uid:'6617beeaa9cfa777ca915b7c',type:10,dt:1788272164,templateId:'6a91840a740be0cff50e0310 successMessageText'}},null,1)+'\n';
+  const [event]=parseQuestNotifications(sample);
+  assert.equal(event.trader,'6617beeaa9cfa777ca915b7c');
+  assert.equal(event.status,'completed');
+  const traders=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/traders.json'),'utf8')).traders;
+  assert.ok(traders[event.trader],'a trader id from a notification resolves to a bundled portrait');
 });

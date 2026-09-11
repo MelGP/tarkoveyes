@@ -376,11 +376,6 @@ async function captureCursorRegions(cursor, specs) {
       : crop.toPNG();
   });
 }
-async function captureCursorRegion(cursor, requestedWidth = 760, requestedHeight = 460, scale = 1) {
-  return (
-    await captureCursorRegions(cursor, [{ width: requestedWidth, height: requestedHeight, scale }])
-  )[0];
-}
 function clearInventoryMatch(matches) {
   if (!matches[0] || matches[0].confidence < 0.76) return false;
   return !matches[1] || matches[0].confidence - matches[1].confidence >= 0.05;
@@ -520,11 +515,25 @@ async function refreshQuestLogs() {
   const unknownQuestIds = [
     ...new Set(history.events.filter(event => !ids.has(event.id)).map(event => event.id))
   ];
+  // Ids alone say nothing. The trader that sent the notification and the date it
+  // was last seen are what let a player recognise a quest the catalogues lack.
+  const unknownQuests = unknownQuestIds.map(id => {
+    const seen = history.events.filter(event => event.id === id);
+    const latest = seen[seen.length - 1];
+    return {
+      id,
+      trader: seen.map(event => event.trader).filter(Boolean).pop() || null,
+      status: latest?.status || null,
+      lastSeen: latest?.observedAt || null,
+      firstSeen: seen[0]?.observedAt || null
+    };
+  });
   const summary = store.applyQuestHistory(history.events, scannedAt);
   return {
     data: store.data,
     summary,
     unknownQuestIds,
+    unknownQuests,
     notificationFiles: history.notificationFiles,
     ignoredFiles: history.ignoredFiles,
     scannedAt
@@ -646,6 +655,7 @@ app.whenReady().then(() => {
       'customMarkers',
       'lockedDoors',
       'switches',
+      'bossSpawns',
       'hazardMinefield',
       'hazardSniper',
       'hazardMortar',

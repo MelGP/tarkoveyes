@@ -8,7 +8,8 @@
  * strings, so the names are extracted once, here, from the bundled catalogs.
  * Offline: it reads app/data, never the network.
  *
- *   node tools/build-keys.cjs           write app/data/keys.json
+ *   node tools/build-keys.cjs                    write app/data/keys.json
+ *   node tools/build-keys.cjs --download-icons   also fetch the key images
  *   node tools/build-keys.cjs --check   report without writing
  */
 const fs = require('node:fs');
@@ -16,6 +17,8 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const dataDir = path.join(root, 'app/data');
 const check = process.argv.includes('--check');
+const downloadIcons = process.argv.includes('--download-icons');
+const iconDir = path.join(root, 'app/assets/keys');
 
 const wanted = new Set();
 for (const file of fs.readdirSync(path.join(dataDir, 'poi'))) {
@@ -56,6 +59,37 @@ if (check) {
   console.log('check only, nothing written');
   process.exit(missing.length ? 1 : 0);
 }
-fs.writeFileSync(path.join(dataDir, 'keys.json'), JSON.stringify(doc));
-console.log('wrote app/data/keys.json (' + (JSON.stringify(doc).length / 1024).toFixed(1) + ' KB)');
-process.exit(missing.length ? 1 : 0);
+// The item image is the one the game shows, which is what makes a key list
+// readable at a glance. 197 of them cost about half a megabyte.
+async function fetchIcons() {
+  fs.mkdirSync(iconDir, { recursive: true });
+  let saved = 0;
+  for (const id of Object.keys(keys)) {
+    const file = path.join(iconDir, id + '.webp');
+    if (fs.existsSync(file) && fs.statSync(file).size > 200) continue;
+    const response = await fetch('https://assets.tarkov.dev/' + id + '-icon.webp');
+    if (!response.ok) throw Error(response.status + ' for key icon ' + id);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length < 200 || bytes.subarray(0, 4).toString() !== 'RIFF' || bytes.subarray(8, 12).toString() !== 'WEBP')
+      throw Error('Not a WebP image for key ' + id);
+    fs.writeFileSync(file, bytes);
+    saved++;
+  }
+  console.log('key icons downloaded: ' + saved + ', bundled in total: ' + fs.readdirSync(iconDir).length);
+}
+// Icons are fetched before the catalogue is written, so the icon paths land in
+// the same pass. An early process.exit() here once killed the download midway.
+function writeCatalog() {
+  for (const [id, key] of Object.entries(keys))
+    if (fs.existsSync(path.join(iconDir, id + '.webp'))) key.icon = 'assets/keys/' + id + '.webp';
+  fs.writeFileSync(path.join(dataDir, 'keys.json'), JSON.stringify(doc));
+  console.log('wrote app/data/keys.json (' + (JSON.stringify(doc).length / 1024).toFixed(1) + ' KB)');
+}
+(async () => {
+  if (downloadIcons) await fetchIcons();
+  writeCatalog();
+  process.exitCode = missing.length ? 1 : 0;
+})().catch(error => {
+  console.error(error.message);
+  process.exitCode = 1;
+});

@@ -884,3 +884,74 @@ dialog{width:min(720px,calc(100vw - 40px));max-height:calc(100vh - 48px);padding
   line-height: 1.5;
 }
 .switch-layer-icon { color: #91b7d0 }
+
+/* Trader portraits, bundled from tarkov.dev. Initials remain the fallback for
+   the Story and Battle Pass tracks, which have no trader. */
+img.trader-badge.trader-portrait {
+  padding: 0;
+  object-fit: cover;
+  background: #22251f;
+  border-color: #4a4f42;
+}
+.brief-trader { display: flex; align-items: center; gap: 9px }
+.brief-trader-portrait {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  object-fit: cover;
+  background: #22251f;
+}
+
+/* Key images from the game, used wherever a key is named. */
+.key-icon { width: 22px; height: 22px; flex: none; object-fit: contain; border-radius: 3px }
+.requirement .key-icon { width: 20px; height: 20px }
+.door-key-line { display: flex; align-items: center; gap: 8px; margin-top: 2px }
+.door-key-line .key-icon { width: 26px; height: 26px }
+
+/* The picture the game shows for a task, and the face of a boss on its zone. */
+.brief-hero {
+  display: block;
+  width: 100%;
+  height: 96px;
+  margin: -20px -18px 14px;
+  width: calc(100% + 36px);
+  object-fit: cover;
+  border-bottom: 1px solid var(--line);
+  opacity: 0.92;
+}
+.boss-landmark image { filter: drop-shadow(0 1px 2px #0b1114) }
+
+/* Boss spawns: the face belongs to the zone, not to whatever label won the name. */
+.boss-marker { cursor: pointer }
+.boss-marker image { filter: drop-shadow(0 1px 2px #0b1114) }
+.boss-marker:hover rect,
+.boss-marker:focus-visible rect { stroke: var(--gold); stroke-width: 2 }
+.boss-popup-head { display: flex; align-items: center; gap: 10px; margin-top: 2px }
+.boss-popup-portrait {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  object-fit: cover;
+}
+.boss-layer-icon { color: #e59789 }
+
+/* Quests the logs know and no bundled catalogue does. */
+.integrity-unknown { margin: 10px 0 4px }
+.unknown-note { margin: 0 0 8px; color: var(--muted); font-size: 10px; line-height: 1.55 }
+.unknown-quest {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: #1d1f22;
+}
+.unknown-quest strong { font-size: 12px; color: var(--text) }
+.unknown-quest small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px }
+.unknown-quest-portrait { width: 26px; height: 26px; flex: none; border-radius: 5px; object-fit: cover }

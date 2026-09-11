@@ -119,6 +119,9 @@ function parseQuestNotifications(text) {
       type: 'quest',
       id,
       status,
+      // The notification names the trader that sent it. For a quest the bundled
+      // catalogues do not know, that is the only identifying detail available.
+      trader: /^[a-f0-9]{24}$/i.test(String(message.uid || '')) ? String(message.uid).toLowerCase() : null,
       eventId: String(payload.eventId || `${id}:${status}:${observedAt}`),
       observedAt
     };

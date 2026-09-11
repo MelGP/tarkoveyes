@@ -19,6 +19,11 @@ let bridge = window.companion,
   lootRenderTimer = null,
   labKeycards = [],
   keyCatalog = {},
+  traderCatalog = {},
+  questImages = {},
+  bossCatalog = {},
+  bossSpawnRates = null,
+  unknownQuestDetails = [],
   mapDefinition,
   mapDefinitions = [],
   currentMapId = 'customs',
@@ -414,9 +419,44 @@ function applyFloor(value) {
   renderKeycardDoors();
   renderDoors();
   renderSwitches();
+  renderBosses();
   renderLoot();
   renderBattlepass();
   renderHazards();
+}
+// Quest rows used to show initials. The portraits are bundled from tarkov.dev,
+// but Story and Battle Pass tracks have no trader, and a file can go missing,
+// so the initials stay as the fallback rather than leaving an empty square.
+function traderInitials(name) {
+  return name
+    .split(/s+/)
+    .map(word => word[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+}
+function traderBadge(quest) {
+  const portrait = traderCatalog[quest.traderId];
+  if (!portrait) {
+    const badge = el('span', 'trader-badge', traderInitials(quest.traderName));
+    badge.dataset.trader = quest.traderName;
+    badge.setAttribute('aria-hidden', 'true');
+    return badge;
+  }
+  const image = el('img', 'trader-badge trader-portrait');
+  image.src = portrait.image;
+  image.alt = '';
+  image.loading = 'lazy';
+  image.title = quest.traderName;
+  image.dataset.trader = quest.traderName;
+  image.setAttribute('aria-hidden', 'true');
+  image.onerror = () => {
+    const badge = el('span', 'trader-badge', traderInitials(quest.traderName));
+    badge.dataset.trader = quest.traderName;
+    badge.setAttribute('aria-hidden', 'true');
+    image.replaceWith(badge);
+  };
+  return image;
 }
 function renderList() {
   const search = $('quest-search').value.trim().toLowerCase(),
@@ -480,25 +520,14 @@ function renderList() {
       )
     );
     if (source(q) === 'logs') body.append(el('small', 'log-source', 'Updated from logs'));
-    const traderBadge = el(
-      'span',
-      'trader-badge',
-      q.traderName
-        .split(/\s+/)
-        .map(word => word[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
-    );
-    traderBadge.dataset.trader = q.traderName;
-    traderBadge.setAttribute('aria-hidden', 'true');
+    const badge = traderBadge(q);
     const statusDot = el('span', 'quest-status ' + status(q));
     statusDot.title = status(q);
     statusDot.setAttribute('aria-hidden', 'true');
     const arrow = uiIcon('chevron');
     arrow.classList.add('quest-arrow');
     row.title = q.name + ' — ' + q.traderName + ' · ' + questMaps(q) + ' · ' + status(q);
-    row.append(traderBadge, body, statusDot, arrow);
+    row.append(badge, body, statusDot, arrow);
     row.onclick = () => selectQuest(q);
     $('quest-list').append(row);
   });
@@ -614,7 +643,26 @@ function renderDetail() {
     renderList();
   };
   titleRow.append(favorite);
-  head.append(el('span', 'eyebrow', q.traderName.toUpperCase() + ' / QUEST BRIEF'), titleRow);
+  const questPicture = questImages[q.id];
+  if (questPicture) {
+    const hero = el('img', 'brief-hero');
+    hero.src = questPicture;
+    hero.alt = '';
+    hero.loading = 'lazy';
+    hero.onerror = () => hero.remove();
+    head.append(hero);
+  }
+  const briefTrader = el('div', 'brief-trader');
+  const briefPortrait = traderCatalog[q.traderId];
+  if (briefPortrait) {
+    const image = el('img', 'brief-trader-portrait');
+    image.src = briefPortrait.image;
+    image.alt = '';
+    image.onerror = () => image.remove();
+    briefTrader.append(image);
+  }
+  briefTrader.append(el('span', 'eyebrow', q.traderName.toUpperCase() + ' / QUEST BRIEF'));
+  head.append(briefTrader, titleRow);
   const meta = el('div', 'detail-meta');
   meta.append(el('span', 'pill', questMaps(q)), el('span', 'pill', data.mode.toUpperCase()));
   if (q.minPlayerLevel > 0) meta.append(el('span', 'pill', 'Level ' + q.minPlayerLevel));
@@ -673,7 +721,7 @@ function renderDetail() {
     gear.append(el('div', 'section-title', 'KEYS TO BRING'));
     questKeys.forEach(k => {
       const row = el('p', 'requirement' + (k.optional ? ' optional-requirement' : ''));
-      row.append(uiIcon('keycard'), el('span', '', k.label));
+      row.append(keyIconFor(k.label), el('span', '', k.label));
       const meta = [
         ...(q.mapIds?.length > 1 ? k.maps.map(mapName) : []),
         ...(k.optional ? ['optional objective'] : [])
@@ -883,6 +931,7 @@ function setView() {
   renderKeycardDoors();
   renderDoors();
   renderSwitches();
+  renderBosses();
   renderCustomMarkers();
   renderLandmarks();
   renderExtractLabels();
@@ -1468,6 +1517,28 @@ function showKeycardDoor(entry) {
 // that open them, and only Labs ever drew them. Key names come from
 // data/keys.json, a 16 KB extract, so the map never has to parse the 2.6 MB
 // price catalog to print "Dorm room 206 key".
+// The key as the game draws it. Falls back to the outline glyph for keys with
+// no bundled image and for grouped labels like "A key or B key".
+function keyImage(id) {
+  const entry = keyCatalog[id];
+  if (!entry?.icon) return uiIcon('keycard');
+  const image = el('img', 'key-icon');
+  image.src = entry.icon;
+  image.alt = '';
+  image.loading = 'lazy';
+  image.title = entry.name;
+  image.onerror = () => image.replaceWith(uiIcon('keycard'));
+  return image;
+}
+function keyIdsForName(name) {
+  return Object.entries(keyCatalog)
+    .filter(([, key]) => name.toLowerCase().includes(key.name.toLowerCase()))
+    .map(([id]) => id);
+}
+function keyIconFor(name) {
+  const ids = keyIdsForName(name);
+  return ids.length === 1 ? keyImage(ids[0]) : uiIcon('keycard');
+}
 function keyName(id) {
   return keyCatalog[id]?.name || 'Unknown key';
 }
@@ -1496,7 +1567,12 @@ function showDoor(door) {
   pop.append(
     close,
     el('span', 'eyebrow', 'LOCKED DOOR'),
-    el('strong', '', ids.map(keyName).join(' or '))
+    (() => {
+      const line = el('div', 'door-key-line');
+      for (const id of ids) line.append(keyImage(id));
+      line.append(el('strong', '', ids.map(keyName).join(' or ')));
+      return line;
+    })()
   );
   if (ids.length > 1) pop.append(el('p', 'door-note', 'Any one of these keys opens it.'));
   const wanted = [...new Set(ids.flatMap(questsNeedingKey))];
@@ -1561,15 +1637,30 @@ function renderDoors() {
         'stroke-width': 1.1
       })
     );
-    const glyph = svg('use', {
-      href: 'assets/icons.svg#keycard',
-      x: -7,
-      y: -5,
-      width: 14,
-      height: 10
-    });
-    glyph.setAttribute('class', 'door-glyph');
-    g.append(glyph);
+    // The marker wears the key's own game image when one is bundled.
+    const doorIcon = keyCatalog[(door.keyIds || [])[0]]?.icon;
+    if (doorIcon) {
+      g.append(
+        svg('image', {
+          href: doorIcon,
+          x: -8,
+          y: -8,
+          width: 16,
+          height: 16,
+          preserveAspectRatio: 'xMidYMid meet'
+        })
+      );
+    } else {
+      const glyph = svg('use', {
+        href: 'assets/icons.svg#keycard',
+        x: -7,
+        y: -5,
+        width: 14,
+        height: 10
+      });
+      glyph.setAttribute('class', 'door-glyph');
+      g.append(glyph);
+    }
     g.onclick = event => {
       event.stopPropagation();
       showDoor(door);
@@ -2032,9 +2123,11 @@ function derivedLandmarks() {
   const out = [];
   for (const poi of allPois) {
     let label = null,
+      boss = null,
       detail = null;
     if (poi.kind === 'boss-zone') {
       label = poi.name.includes('·') ? poi.name.split('·').pop().trim() : null;
+      boss = poi.bossName;
       if (label && poi.bossName)
         detail =
           poi.bossName +
@@ -2056,7 +2149,7 @@ function derivedLandmarks() {
     if (taken.has(key)) continue;
     if (curated.some(name => name.includes(key) || key.includes(name))) continue;
     taken.add(key);
-    out.push({ label: label.toUpperCase(), position: poi.position, detail });
+    out.push({ label: label.toUpperCase(), position: poi.position, detail, boss });
   }
   return out;
 }
@@ -2082,6 +2175,141 @@ function landmarkText(name, position, detail) {
     node.append(caption);
   }
   return node;
+}
+// Boss spawns. These were first drawn as part of the landmark labels, which hid
+// them wherever the label lost: Reshala vanished from the Customs dorms because
+// a hand-placed DORMS label won the name, and Tagilla never appeared on Factory
+// at all because his zone is called "Any scav spawn". The portraits belong to
+// the zones, not to the captions, so they get their own layer.
+function bossZones() {
+  return allPois.filter(poi => poi.kind === 'boss-zone' && poi.bossName);
+}
+function bossGroups() {
+  const scale = markerScale(),
+    cell = Math.max(18, 70 * scale),
+    groups = new Map();
+  for (const zone of bossZones()) {
+    if (floorFor(zone.position) !== floor) continue;
+    const projected = point(zone.position),
+      // One face per boss per neighbourhood: Icebreaker has forty zones and a
+      // portrait on each would bury the ship.
+      key = [zone.bossName, Math.floor(projected.x / cell), Math.floor(projected.y / cell)].join(
+        ':'
+      ),
+      group = groups.get(key);
+    if (group) group.zones.push(zone);
+    else groups.set(key, { boss: zone.bossName, projected, zones: [zone] });
+  }
+  return [...groups.values()];
+}
+// The published rate depends on the mode: Reshala is 60% in PvP and 75% in PvE,
+// and the Lighthouse Rogues jump from 50-90% to a flat 100%. The zone POIs carry
+// a single snapshot, so the per-mode table wins wherever it has an entry.
+function bossChance(zones) {
+  const table = bossSpawnRates?.modes?.[data.mode]?.[currentMapId];
+  let best = 0;
+  for (const zone of zones) {
+    const published = table?.[zone.bossId];
+    best = Math.max(best, typeof published === 'number' ? published : zone.spawnChance || 0);
+  }
+  return best > 0 ? Math.round(best * 100) + '% chance' : null;
+}
+function bossRateNote() {
+  if (!bossSpawnRates) return null;
+  if (data.mode === 'seasonal' && bossSpawnRates.seasonalSource === 'pvp')
+    return 'Seasonal rates are not published, so this is the PvP figure.';
+  return 'Rate for the ' + itemModeName() + ' mode.';
+}
+function showBoss(group) {
+  const pop = $('map-popup');
+  pop.replaceChildren();
+  const close = el('button', 'icon-only popup-close');
+  close.append(uiIcon('close'));
+  close.setAttribute('aria-label', 'Close boss');
+  close.onclick = () => (pop.hidden = true);
+  const portrait = bossCatalog[group.boss];
+  const head = el('div', 'boss-popup-head');
+  if (portrait) {
+    const image = el('img', 'boss-popup-portrait');
+    image.src = portrait.image;
+    image.alt = '';
+    image.onerror = () => image.remove();
+    head.append(image);
+  }
+  head.append(el('strong', '', group.boss));
+  pop.append(close, el('span', 'eyebrow', 'BOSS SPAWN'), head);
+  const chance = bossChance(group.zones);
+  if (chance) pop.append(el('p', 'door-note', 'Spawns here with a ' + chance + '.'));
+  const rateNote = bossRateNote();
+  if (chance && rateNote) pop.append(el('small', 'door-note', rateNote));
+  const places = [...new Set(group.zones.map(zone => zone.name).filter(Boolean))];
+  if (places.length) pop.append(el('p', 'door-note', places.join(' · ')));
+  pop.append(
+    el(
+      'small',
+      'door-note',
+      group.zones.length +
+        ' spawn zone' +
+        (group.zones.length === 1 ? '' : 's') +
+        ' here · from the bundled tarkov.dev map data'
+    )
+  );
+  pop.hidden = false;
+}
+function renderBosses() {
+  const layer = $('boss-markers');
+  if (!layer) return;
+  layer.replaceChildren();
+  if (!mapDefinition || !$('layer-bosses')?.checked) return;
+  const scale = markerScale();
+  for (const group of bossGroups()) {
+    const portrait = bossCatalog[group.boss],
+      size = 26 * scale,
+      chance = bossChance(group.zones),
+      g = svg('g', {
+        class: 'map-marker boss-marker',
+        tabindex: '0',
+        role: 'button',
+        'aria-label': group.boss + ' spawn' + (chance ? ' · ' + chance : '')
+      });
+    if (portrait)
+      g.append(
+        svg('image', {
+          href: portrait.image,
+          x: group.projected.x - size / 2,
+          y: group.projected.y - size / 2,
+          width: size,
+          height: size,
+          preserveAspectRatio: 'xMidYMid slice'
+        })
+      );
+    g.append(
+      svg('rect', {
+        x: group.projected.x - size / 2,
+        y: group.projected.y - size / 2,
+        width: size,
+        height: size,
+        rx: 5 * scale,
+        fill: portrait ? 'none' : '#141a1c',
+        stroke: '#e59789',
+        'stroke-width': 1.5 * scale
+      })
+    );
+    const caption = svg('title');
+    caption.textContent = group.boss + (chance ? ' spawns here · ' + chance : ' spawns here');
+    g.append(caption);
+    g.onclick = event => {
+      event.stopPropagation();
+      showBoss(group);
+    };
+    g.onkeydown = event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        showBoss(group);
+      }
+    };
+    layer.append(g);
+  }
 }
 function renderLandmarks() {
   $('landmarks').replaceChildren();
@@ -2282,7 +2510,10 @@ function renderMyRaid(focus = false) {
     const line = (entry, iconName, prefix, action) => {
       const row = el('div', 'raid-kit-row' + (entry.optional ? ' optional-requirement' : '')),
         head = el('div', 'raid-kit-head');
-      head.append(uiIcon(iconName), el('strong', '', (prefix || '') + entry.label));
+      head.append(
+        typeof iconName === 'string' ? uiIcon(iconName) : iconName,
+        el('strong', '', (prefix || '') + entry.label)
+      );
       if (action) head.append(action);
       row.append(
         head,
@@ -2294,7 +2525,7 @@ function renderMyRaid(focus = false) {
       );
       gear.append(row);
     };
-    kit.keys.forEach(entry => line(entry, 'keycard', '', keyDoorButton(entry.label)));
+    kit.keys.forEach(entry => line(entry, keyIconFor(entry.label), '', keyDoorButton(entry.label)));
     kit.carry.forEach(entry => line(entry, 'tag', entry.action + ': '));
     gear.append(
       el(
@@ -2408,6 +2639,10 @@ function updateLayerCounts() {
   setLayerCount('switch-count', switchTotal);
   $('layer-switches').disabled = switchTotal === 0;
   $('layer-switches-row').hidden = switchTotal === 0;
+  const bossTotal = bossZones().length;
+  setLayerCount('boss-count', bossTotal);
+  $('layer-bosses').disabled = bossTotal === 0;
+  $('layer-bosses-row').hidden = bossTotal === 0;
   for (const [key, control, id] of containerLayers)
     setLootLayerAvailability(
       control,
@@ -2457,6 +2692,7 @@ function layerSettings() {
     customMarkers: $('layer-custom').checked,
     lockedDoors: $('layer-doors').checked,
     switches: $('layer-switches').checked,
+    bossSpawns: $('layer-bosses').checked,
     ...Object.fromEntries(hazardKinds.map(kind => [kind.key, $(kind.control).checked]))
   };
   for (const [key, id] of [...containerLayers, ...looseLayers])
@@ -2480,6 +2716,7 @@ function renderAllMapLayers() {
   renderKeycardDoors();
   renderDoors();
   renderSwitches();
+  renderBosses();
   renderLandmarks();
   renderCustomMarkers();
   renderLoot();
@@ -2680,10 +2917,63 @@ function renderActivity() {
     ' map points · ' +
     (unknownIds.length
       ? unknownIds.length +
-        ' newer quest' +
+        ' quest' +
         (unknownIds.length === 1 ? '' : 's') +
-        ' detected from logs; details pending catalog update'
+        ' in your progress that this catalog does not list'
       : 'all detected quests recognized');
+  // Those quests used to be called "newer", which is wrong: the logs that
+  // carry them go back to earlier game versions and earlier seasons, and
+  // tarkov.dev publishes only what the current build has. Naming the trader
+  // and the date is the most the data allows, so that is what is shown.
+  const unknownPanel = $('catalog-unknown');
+  if (unknownPanel) {
+    unknownPanel.replaceChildren();
+    unknownPanel.hidden = !unknownIds.length;
+    if (unknownIds.length) {
+      const states = {};
+      for (const id of unknownIds)
+        states[profile().quests[id]] = (states[profile().quests[id]] || 0) + 1;
+      unknownPanel.append(
+        el(
+          'p',
+          'unknown-note',
+          Object.entries(states)
+            .map(([state, count]) => count + ' ' + state)
+            .join(' · ') +
+            '. They come from your game logs but no bundled catalog names them, so they are left out of the counts. Quests removed in an earlier patch or event tasks tarkov.dev has not published both land here.'
+        )
+      );
+      for (const entry of (unknownQuestDetails || []).slice(0, 8)) {
+        const row = el('div', 'unknown-quest'),
+          trader = entry.trader && traderCatalog[entry.trader];
+        if (trader) {
+          const portrait = el('img', 'unknown-quest-portrait');
+          portrait.src = trader.image;
+          portrait.alt = '';
+          portrait.onerror = () => portrait.remove();
+          row.append(portrait);
+        }
+        const copy = el('div');
+        copy.append(el('strong', '', trader ? trader.name : 'Unknown trader'));
+        copy.append(
+          el(
+            'small',
+            '',
+            (entry.status || 'seen') +
+              (entry.lastSeen ? ' · ' + new Date(entry.lastSeen).toLocaleDateString() : '') +
+              ' · ' +
+              entry.id
+          )
+        );
+        row.append(copy);
+        unknownPanel.append(row);
+      }
+      if (unknownIds.length > 8)
+        unknownPanel.append(
+          el('small', 'unknown-note', 'and ' + (unknownIds.length - 8) + ' more.')
+        );
+    }
+  }
   if (!history.length)
     list.append(el('p', 'activity-empty', 'No quest changes have been read from the logs yet.'));
   for (const event of history) {
@@ -2828,9 +3118,6 @@ function readyToStart() {
       });
     })
     .sort((a, b) => (a.chainDepth ?? 99) - (b.chainDepth ?? 99) || a.name.localeCompare(b.name));
-}
-function openObjectiveCount(q) {
-  return q.objectives.filter(o => !isDone(o)).length;
 }
 function mapWorkload() {
   const rows = new Map();
@@ -3765,6 +4052,7 @@ async function switchMap(id, { filterQuests = false } = {}) {
   renderKeycardDoors();
   renderDoors();
   renderSwitches();
+  renderBosses();
   renderLandmarks();
   renderExtractLabels();
   renderHazards();
@@ -4027,6 +4315,7 @@ async function start() {
     customMarkers: true,
     lockedDoors: false,
     switches: false,
+    bossSpawns: false,
     ...Object.fromEntries(hazardKinds.map(kind => [kind.key, false])),
     ...data.settings.mapLayers
   };
@@ -4048,12 +4337,37 @@ async function start() {
     ['layer-custom', 'customMarkers'],
     ['layer-doors', 'lockedDoors'],
     ['layer-switches', 'switches'],
+    ['layer-bosses', 'bossSpawns'],
     ...hazardKinds.map(kind => [kind.control, kind.key])
   ])
     $(id).checked = !!data.settings.mapLayers[key];
   updateLayerChildren();
-  [mapDefinitions, keyCatalog, labKeycards, specialTracks] = await Promise.all([
+  [
+    mapDefinitions,
+    questImages,
+    bossSpawnRates,
+    bossCatalog,
+    traderCatalog,
+    keyCatalog,
+    labKeycards,
+    specialTracks
+  ] = await Promise.all([
     fetch('data/maps.json').then(r => r.json()),
+    fetch('data/quest-images.json')
+      .then(r => r.json())
+      .then(doc => doc.images)
+      .catch(() => ({})),
+    fetch('data/boss-spawns.json')
+      .then(r => r.json())
+      .catch(() => null),
+    fetch('data/bosses.json')
+      .then(r => r.json())
+      .then(doc => doc.bosses)
+      .catch(() => ({})),
+    fetch('data/traders.json')
+      .then(r => r.json())
+      .then(doc => doc.traders)
+      .catch(() => ({})),
     fetch('data/keys.json')
       .then(r => r.json())
       .then(doc => doc.keys),
@@ -4171,21 +4485,29 @@ async function start() {
     renderKeycardDoors();
     renderDoors();
     renderSwitches();
+    renderBosses();
     saveLayers();
   };
   $('layer-lab-keycard-labels').onchange = () => {
     renderKeycardDoors();
     renderDoors();
     renderSwitches();
+    renderBosses();
+    saveLayers();
+  };
+  $('layer-bosses').onchange = () => {
+    renderBosses();
     saveLayers();
   };
   $('layer-switches').onchange = () => {
     renderSwitches();
+    renderBosses();
     saveLayers();
   };
   $('layer-doors').onchange = () => {
     renderDoors();
     renderSwitches();
+    renderBosses();
     saveLayers();
   };
   $('layer-labels').onchange = () => {
@@ -4347,6 +4669,7 @@ async function start() {
     label.textContent = 'Updating…';
     try {
       const result = await bridge.refreshLogs();
+      unknownQuestDetails = result.unknownQuests || [];
       data = result.data;
       await loadMode();
       updatePosition();
