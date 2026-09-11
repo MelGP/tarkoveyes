@@ -827,3 +827,60 @@ dialog{width:min(720px,calc(100vw - 40px));max-height:calc(100vh - 48px);padding
 .requirement.optional-requirement{color:var(--muted-strong)}
 .requirement.optional-requirement .icon{color:var(--muted)}
 .requirement small{margin-left:7px;color:var(--muted);font-size:10px}
+
+/* Danger zones. Painted on the artwork, never interactive: on Lighthouse these
+   are 338 polygons and they must not swallow a map drag. */
+#hazards { pointer-events: none }
+.hazard-zone { stroke-width: 1.2; vector-effect: non-scaling-stroke }
+/* Mines are drawn one per mine and overlap heavily, so their fill is kept faint:
+   a dense field still reads as a solid band without hiding the map under it. */
+.hazard-minefield { fill: #e053431c; stroke: #e0534355; stroke-width: 0.6 }
+.hazard-sniper { fill: #e9b96926; stroke: #e9b969cc; stroke-dasharray: 5 4 }
+.hazard-mortar { fill: #b6a5ce26; stroke: #b6a5cecc; stroke-dasharray: 2 4 }
+.hazard-hazard { fill: #91b7d026; stroke: #91b7d0cc }
+.hazard-swatch {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid;
+}
+.hazard-swatch.hazard-minefield { background: #e0534359; border-color: #e05343 }
+.hazard-swatch.hazard-sniper { background: #e9b96940; border-color: #e9b969 }
+.hazard-swatch.hazard-mortar { background: #b6a5ce40; border-color: #b6a5ce }
+.hazard-swatch.hazard-hazard { background: #91b7d040; border-color: #91b7d0 }
+
+/* Locked doors: the same data the Labs keycard layer uses, on every map. */
+.door-map-marker { cursor: pointer }
+.door-map-marker .door-glyph { color: #c6b28a; stroke: #c6b28a; fill: none; stroke-width: 1.6 }
+.door-map-marker:hover circle,
+.door-map-marker:focus-visible circle { stroke: var(--gold); fill-opacity: 1 }
+.door-note { margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5 }
+.key-door-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border-radius: 5px;
+  flex: none;
+}
+.key-door-button .icon { width: 13px; height: 13px; color: var(--gold) }
+.door-layer-icon { color: #c6b28a }
+
+/* Switches: the POIs record what each one operates, including chains. */
+.switch-map-marker { cursor: pointer }
+.switch-map-marker .switch-glyph { fill: none; stroke: #91b7d0; stroke-width: 1.3 }
+.switch-map-marker .switch-glyph-dot { fill: #91b7d0 }
+.switch-map-marker:hover circle:first-child,
+.switch-map-marker:focus-visible circle:first-child { stroke: var(--blue); fill-opacity: 1 }
+.switch-effect {
+  margin: 6px 0 0;
+  padding-left: 9px;
+  border-left: 2px solid #91b7d0;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.switch-layer-icon { color: #91b7d0 }

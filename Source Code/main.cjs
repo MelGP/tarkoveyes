@@ -643,7 +643,13 @@ app.whenReady().then(() => {
       'labsKeycards',
       'labsKeycardNames',
       'landmarks',
-      'customMarkers'
+      'customMarkers',
+      'lockedDoors',
+      'switches',
+      'hazardMinefield',
+      'hazardSniper',
+      'hazardMortar',
+      'hazardHazard'
     ];
     if (!layers || keys.some(key => typeof layers[key] !== 'boolean'))
       throw Error('Invalid map layers');

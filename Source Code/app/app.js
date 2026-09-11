@@ -18,6 +18,7 @@ let bridge = window.companion,
   lootData = null,
   lootRenderTimer = null,
   labKeycards = [],
+  keyCatalog = {},
   mapDefinition,
   mapDefinitions = [],
   currentMapId = 'customs',
@@ -120,11 +121,19 @@ function source(q) {
     ? 'logs'
     : null;
 }
+// Objective ids are not stamped with their quest, so completing a quest left every
+// one of its objectives reading as undone: a profile with 188 finished quests still
+// showed "0 / 1797 objectives". This index gives isDone the missing link.
+let objectiveOwner = new Map();
+function indexObjectiveOwners() {
+  objectiveOwner = new Map();
+  for (const q of quests) for (const o of q.objectives) objectiveOwner.set(o.id, q.id);
+}
 function isDone(o) {
-  return (
-    !!profile().objectives[o.id] ||
-    (o.sourceQuestId && profile().quests[o.sourceQuestId] === 'completed')
-  );
+  if (profile().objectives[o.id]) return true;
+  if (o.sourceQuestId && profile().quests[o.sourceQuestId] === 'completed') return true;
+  const questId = objectiveOwner.get(o.id);
+  return !!questId && profile().quests[questId] === 'completed';
 }
 function objectiveTarget(o) {
   for (const detail of o.details || []) {
@@ -403,8 +412,11 @@ function applyFloor(value) {
   }
   renderMarkers();
   renderKeycardDoors();
+  renderDoors();
+  renderSwitches();
   renderLoot();
   renderBattlepass();
+  renderHazards();
 }
 function renderList() {
   const search = $('quest-search').value.trim().toLowerCase(),
@@ -696,6 +708,12 @@ function renderDetail() {
     check.type = 'checkbox';
     check.checked = isDone(o);
     check.setAttribute('aria-label', 'Confirm objective ' + (i + 1));
+    if (status(q) === 'completed') {
+      // The quest is done, so every objective under it is too. Leaving the box
+      // clickable would just snap back on the next render.
+      check.disabled = true;
+      check.title = 'This quest is marked completed.';
+    }
     check.onchange = async () => {
       try {
         await changeProgress({
@@ -863,6 +881,8 @@ function setView() {
   $('map-svg').setAttribute('viewBox', [view.x, view.y, view.w, view.h].join(' '));
   renderMarkers();
   renderKeycardDoors();
+  renderDoors();
+  renderSwitches();
   renderCustomMarkers();
   renderLandmarks();
   renderExtractLabels();
@@ -1444,6 +1464,246 @@ function showKeycardDoor(entry) {
   );
   pop.hidden = false;
 }
+// Locked doors. Every bundled POI file carries them with the ids of the keys
+// that open them, and only Labs ever drew them. Key names come from
+// data/keys.json, a 16 KB extract, so the map never has to parse the 2.6 MB
+// price catalog to print "Dorm room 206 key".
+function keyName(id) {
+  return keyCatalog[id]?.name || 'Unknown key';
+}
+function doorEntries() {
+  const labCards = new Set(labKeycards.map(card => card.id));
+  return allPois.filter(poi => {
+    if (poi.kind !== 'locked-door') return false;
+    // Labs keycard doors have their own layer with the card colours; drawing them
+    // twice would just stack two markers on the same door.
+    return !(currentMapId === 'the-lab' && (poi.keyIds || []).some(id => labCards.has(id)));
+  });
+}
+function questsNeedingKey(id) {
+  return quests
+    .filter(q => (q.neededKeys || []).some(key => key.id === id) && status(q) !== 'completed')
+    .map(q => q.name);
+}
+function showDoor(door) {
+  const pop = $('map-popup');
+  pop.replaceChildren();
+  const close = el('button', 'icon-only popup-close');
+  close.append(uiIcon('close'));
+  close.setAttribute('aria-label', 'Close door');
+  close.onclick = () => (pop.hidden = true);
+  const ids = door.keyIds || [];
+  pop.append(
+    close,
+    el('span', 'eyebrow', 'LOCKED DOOR'),
+    el('strong', '', ids.map(keyName).join(' or '))
+  );
+  if (ids.length > 1) pop.append(el('p', 'door-note', 'Any one of these keys opens it.'));
+  const wanted = [...new Set(ids.flatMap(questsNeedingKey))];
+  if (wanted.length)
+    pop.append(
+      el(
+        'p',
+        'door-note',
+        'Wanted by: ' +
+          wanted.slice(0, 4).join(', ') +
+          (wanted.length > 4 ? ' and ' + (wanted.length - 4) + ' more' : '')
+      )
+    );
+  pop.append(
+    el(
+      'small',
+      'door-note',
+      floorName(floorFor(door.position)) + ' · from the bundled tarkov.dev map data'
+    )
+  );
+  pop.hidden = false;
+}
+// Offers the door only when this map has one for that key, so the button never
+// promises something the map cannot show.
+function keyDoorButton(name) {
+  const doors = doorsForKeyName(name);
+  if (!doors.length) return null;
+  const button = el('button', 'key-door-button');
+  button.append(uiIcon('crosshair'));
+  button.title =
+    doors.length + ' door' + (doors.length === 1 ? '' : 's') + ' on ' + mapName(currentMapId);
+  button.setAttribute('aria-label', 'Show the door for ' + name + ' on the map');
+  button.onclick = event => {
+    event.stopPropagation();
+    showDoorsForKey(name);
+  };
+  return button;
+}
+function renderDoors() {
+  const layer = $('door-markers');
+  if (!layer) return;
+  layer.replaceChildren();
+  if (!mapDefinition || !$('layer-doors')?.checked) return;
+  const scale = markerScale();
+  for (const door of doorEntries()) {
+    if (floorFor(door.position) !== floor) continue;
+    const pt = point(door.position),
+      label = (door.keyIds || []).map(keyName).join(' or '),
+      g = svg('g', {
+        transform: `translate(${pt.x} ${pt.y}) scale(${scale})`,
+        class: 'map-marker door-map-marker',
+        tabindex: '0',
+        role: 'button',
+        'aria-label': 'Locked door · ' + label
+      });
+    g.append(
+      svg('circle', {
+        r: 11,
+        fill: '#141a1c',
+        'fill-opacity': '.9',
+        stroke: '#c6b28a',
+        'stroke-width': 1.1
+      })
+    );
+    const glyph = svg('use', {
+      href: 'assets/icons.svg#keycard',
+      x: -7,
+      y: -5,
+      width: 14,
+      height: 10
+    });
+    glyph.setAttribute('class', 'door-glyph');
+    g.append(glyph);
+    g.onclick = event => {
+      event.stopPropagation();
+      showDoor(door);
+    };
+    g.onkeydown = event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        showDoor(door);
+      }
+    };
+    layer.append(g);
+  }
+}
+// Switches. The POIs carry what each one operates, and the chains are the part
+// worth showing: D-2 Power Switch unlocks D-2 Door Switch, which unlocks the
+// D-2 extract. Targets are resolved by id against the same map's POIs.
+function switchEntries() {
+  return allPois.filter(poi => poi.kind === 'switch');
+}
+function poiById(id) {
+  return allPois.find(poi => poi.id === id) || null;
+}
+function switchEffects(control) {
+  const verbs = { Unlock: 'Unlocks', Lock: 'Locks', Open: 'Opens', Close: 'Closes' };
+  return (control.activates || []).map(step => {
+    const target = poiById(step.targetId),
+      verb = verbs[step.operation] || step.operation;
+    if (!target) return verb + ' another ' + (step.targetKind || 'object') + ' on this map';
+    const next = (target.activates || [])
+      .map(onward => {
+        const beyond = poiById(onward.targetId);
+        return beyond
+          ? (verbs[onward.operation] || onward.operation).toLowerCase() + ' ' + beyond.name
+          : null;
+      })
+      .filter(Boolean);
+    return (
+      verb +
+      ' ' +
+      target.name +
+      (target.kind === 'extract' ? ' (extract)' : '') +
+      (next.length ? ', which ' + next.join(' and ') : '')
+    );
+  });
+}
+function showSwitch(control) {
+  const pop = $('map-popup');
+  pop.replaceChildren();
+  const close = el('button', 'icon-only popup-close');
+  close.append(uiIcon('close'));
+  close.setAttribute('aria-label', 'Close switch');
+  close.onclick = () => (pop.hidden = true);
+  pop.append(close, el('span', 'eyebrow', 'SWITCH'), el('strong', '', control.name));
+  const effects = switchEffects(control);
+  for (const effect of effects) pop.append(el('p', 'switch-effect', effect));
+  if (!effects.length)
+    pop.append(el('p', 'door-note', 'The map data does not record what this one operates.'));
+  pop.append(
+    el(
+      'small',
+      'door-note',
+      floorName(floorFor(control.position)) + ' · from the bundled tarkov.dev map data'
+    )
+  );
+  pop.hidden = false;
+}
+function renderSwitches() {
+  const layer = $('switch-markers');
+  if (!layer) return;
+  layer.replaceChildren();
+  if (!mapDefinition || !$('layer-switches')?.checked) return;
+  const scale = markerScale();
+  for (const control of switchEntries()) {
+    if (floorFor(control.position) !== floor) continue;
+    const pt = point(control.position),
+      g = svg('g', {
+        transform: `translate(${pt.x} ${pt.y}) scale(${scale})`,
+        class: 'map-marker switch-map-marker',
+        tabindex: '0',
+        role: 'button',
+        'aria-label': 'Switch · ' + control.name
+      });
+    g.append(
+      svg('circle', {
+        r: 11,
+        fill: '#141a1c',
+        'fill-opacity': '.9',
+        stroke: '#91b7d0',
+        'stroke-width': 1.1
+      })
+    );
+    g.append(svg('rect', { x: -3.5, y: -6, width: 7, height: 12, rx: 2.4, class: 'switch-glyph' }));
+    g.append(svg('circle', { cx: 0, cy: -2.6, r: 1.7, class: 'switch-glyph-dot' }));
+    g.onclick = event => {
+      event.stopPropagation();
+      showSwitch(control);
+    };
+    g.onkeydown = event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        showSwitch(control);
+      }
+    };
+    layer.append(g);
+  }
+}
+function doorsForKeyName(name) {
+  const wanted = Object.entries(keyCatalog)
+    .filter(([, key]) => name.toLowerCase().includes(key.name.toLowerCase()))
+    .map(([id]) => id);
+  if (!wanted.length) return [];
+  return doorEntries().filter(door => (door.keyIds || []).some(id => wanted.includes(id)));
+}
+function showDoorsForKey(name) {
+  const doors = doorsForKeyName(name);
+  if (!doors.length) {
+    toast('No door for ' + name + ' is mapped on ' + mapName(currentMapId) + '.');
+    return;
+  }
+  $('layer-doors').checked = true;
+  saveLayers();
+  applyFloor(floorFor(doors[0].position));
+  const points = doors.map(door => point(door.position)),
+    minX = Math.min(...points.map(p => p.x)),
+    maxX = Math.max(...points.map(p => p.x)),
+    minY = Math.min(...points.map(p => p.y)),
+    maxY = Math.max(...points.map(p => p.y)),
+    w = Math.max(200, (maxX - minX) * 1.6),
+    h = Math.max(130, (maxY - minY) * 1.6);
+  view = { x: (minX + maxX) / 2 - w / 2, y: (minY + maxY) / 2 - h / 2, w, h };
+  setView();
+  if (doors.length === 1) showDoor(doors[0]);
+  toast(doors.length + ' door' + (doors.length === 1 ? '' : 's') + ' for ' + name + '.');
+}
 function renderKeycardDoors() {
   const markerLayer = $('keycard-doors'),
     labelLayer = $('keycard-labels');
@@ -1701,6 +1961,128 @@ const landmarksByMap = {
     ['WHITE KNIGHT', 80, -37, '♘', 'white']
   ]
 };
+// Danger zones. The bundled tarkov.dev POIs carry an outline polygon for every
+// minefield, sniper zone and mortar zone, and nothing drew them: 338 minefields
+// on Lighthouse alone. They are painted straight onto the artwork, below every
+// marker layer, and never take pointer events - a map covered in polygons that
+// swallow drags would be worse than no map.
+const hazardKinds = [
+  {
+    type: 'minefield',
+    key: 'hazardMinefield',
+    control: 'layer-hazard-minefield',
+    label: 'Minefield'
+  },
+  { type: 'sniper', key: 'hazardSniper', control: 'layer-hazard-sniper', label: 'Sniper zone' },
+  { type: 'mortar', key: 'hazardMortar', control: 'layer-hazard-mortar', label: 'Mortar zone' },
+  { type: 'hazard', key: 'hazardHazard', control: 'layer-hazard-hazard', label: 'Hazard' }
+];
+function hazardsOfType(type) {
+  return allPois.filter(poi => poi.kind === 'hazard' && (poi.hazardType || 'hazard') === type);
+}
+function renderHazards() {
+  const layer = $('hazards');
+  if (!layer) return;
+  layer.replaceChildren();
+  if (!mapDefinition) return;
+  for (const kind of hazardKinds) {
+    if (!$(kind.control)?.checked) continue;
+    for (const zone of hazardsOfType(kind.type)) {
+      if (floorFor(zone.position) !== floor) continue;
+      const outline = (zone.outline || []).map(corner => point(corner));
+      let shape;
+      if (outline.length > 2) {
+        shape = svg('polygon', {
+          points: outline.map(corner => corner.x + ',' + corner.y).join(' ')
+        });
+      } else {
+        const centre = point(zone.position);
+        shape = svg('circle', { cx: centre.x, cy: centre.y, r: 6 });
+      }
+      shape.setAttribute('class', 'hazard-zone hazard-' + kind.type);
+      const caption = svg('title');
+      caption.textContent = zone.name || kind.label;
+      shape.append(caption);
+      layer.append(shape);
+    }
+  }
+}
+// The hand-placed landmark list only ever covered Customs and Reserve, so the
+// Landmarks checkbox did nothing on the other eleven maps. Boss zones and BTR
+// stops in the bundled POIs carry real place names ("Kaban · Car Dealership",
+// "Rodina Cinema"), so the rest of the maps can be labelled from data. Names
+// that read like internal identifiers are dropped rather than shown: Terminal
+// and Icebreaker would otherwise be captioned 1BD1PortAmbush1 and Mash_t1.
+const internalLabel = /_|\d|[a-z][A-Z]/;
+// Case matters for the camelCase test above, so the vague words get a separate
+// case-insensitive regex: an /i flag on that one would make [a-z][A-Z] match any
+// two letters and reject every name.
+const vagueLabel = /\b(spawn|ambush|snipe|zone|any)\b/i;
+const floorLabel = /^(first|second|third|fourth|ground)\s+(floor|level)$|^basement$/i;
+function landmarkKey(name) {
+  return name.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+function derivedLandmarks() {
+  if (!allPois.length) return [];
+  // Curated names are matched loosely, so a hand-placed NEW GAS also covers the
+  // catalogue name New Gas Station. Derived names are matched exactly: Sawmill and
+  // Old Sawmill are two different places in Woods and both belong on the map.
+  const curated = (landmarksByMap[currentMapId] || []).map(item => landmarkKey(item[0]));
+  const taken = new Set();
+  const out = [];
+  for (const poi of allPois) {
+    let label = null,
+      detail = null;
+    if (poi.kind === 'boss-zone') {
+      label = poi.name.includes('·') ? poi.name.split('·').pop().trim() : null;
+      if (label && poi.bossName)
+        detail =
+          poi.bossName +
+          ' spawns here' +
+          (poi.spawnChance ? ' · ' + Math.round(poi.spawnChance * 100) + '% chance' : '');
+    } else if (poi.kind === 'btr') {
+      label = poi.name;
+      detail = 'BTR stop';
+    }
+    if (
+      !label ||
+      label.length < 3 ||
+      internalLabel.test(label) ||
+      vagueLabel.test(label) ||
+      floorLabel.test(label)
+    )
+      continue;
+    const key = landmarkKey(label);
+    if (taken.has(key)) continue;
+    if (curated.some(name => name.includes(key) || key.includes(name))) continue;
+    taken.add(key);
+    out.push({ label: label.toUpperCase(), position: poi.position, detail });
+  }
+  return out;
+}
+function landmarkText(name, position, detail) {
+  const scale = markerScale(),
+    p = point(position),
+    node = svg('text', {
+      x: p.x,
+      y: p.y - 15 * scale,
+      'text-anchor': 'middle',
+      fill: '#e2e9d7',
+      stroke: '#183034',
+      'stroke-width': 3 * scale,
+      'paint-order': 'stroke',
+      'font-size': 9 * scale,
+      'font-family': 'Consolas,monospace',
+      'letter-spacing': 0.7 * scale
+    });
+  node.textContent = name;
+  if (detail) {
+    const caption = svg('title');
+    caption.textContent = detail;
+    node.append(caption);
+  }
+  return node;
+}
 function renderLandmarks() {
   $('landmarks').replaceChildren();
   if (!$('layer-labels').checked) return;
@@ -1708,20 +2090,7 @@ function renderLandmarks() {
   for (const [name, x, z, piece, tone] of landmarksByMap[currentMapId] || []) {
     const p = point({ x, z });
     if (!piece) {
-      const t = svg('text', {
-        x: p.x,
-        y: p.y - 15 * scale,
-        'text-anchor': 'middle',
-        fill: '#e2e9d7',
-        stroke: '#183034',
-        'stroke-width': 3 * scale,
-        'paint-order': 'stroke',
-        'font-size': 9 * scale,
-        'font-family': 'Consolas,monospace',
-        'letter-spacing': 0.7 * scale
-      });
-      t.textContent = name;
-      $('landmarks').append(t);
+      $('landmarks').append(landmarkText(name, { x, z }));
       continue;
     }
     const width = Math.max(78, name.length * 5.2 + 30),
@@ -1777,6 +2146,8 @@ function renderLandmarks() {
     g.append(label);
     $('landmarks').append(g);
   }
+  for (const place of derivedLandmarks())
+    $('landmarks').append(landmarkText(place.label, place.position, place.detail));
 }
 function renderExtractLabels() {
   $('extract-labels').replaceChildren();
@@ -1908,10 +2279,11 @@ function renderMyRaid(focus = false) {
       el('span', 'count', String(kit.keys.length + kit.carry.length))
     );
     gear.append(title);
-    const line = (entry, iconName, prefix) => {
+    const line = (entry, iconName, prefix, action) => {
       const row = el('div', 'raid-kit-row' + (entry.optional ? ' optional-requirement' : '')),
         head = el('div', 'raid-kit-head');
       head.append(uiIcon(iconName), el('strong', '', (prefix || '') + entry.label));
+      if (action) head.append(action);
       row.append(
         head,
         el(
@@ -1922,7 +2294,7 @@ function renderMyRaid(focus = false) {
       );
       gear.append(row);
     };
-    kit.keys.forEach(entry => line(entry, 'keycard'));
+    kit.keys.forEach(entry => line(entry, 'keycard', '', keyDoorButton(entry.label)));
     kit.carry.forEach(entry => line(entry, 'tag', entry.action + ': '));
     gear.append(
       el(
@@ -1977,7 +2349,36 @@ function setLootLayerAvailability(controlId, countId, count) {
   if (row) row.hidden = count === 0;
   setLayerCount(countId, count);
 }
+function updateHazardCounts() {
+  let total = 0;
+  for (const kind of hazardKinds) {
+    const zones = hazardsOfType(kind.type).length;
+    total += zones;
+    const input = $(kind.control),
+      row = input?.closest('label');
+    if (input) input.disabled = zones === 0;
+    if (row) row.hidden = zones === 0;
+    setLayerCount('hazard-' + kind.type + '-count', zones);
+  }
+  const group = $('hazard-group');
+  if (group) {
+    group.hidden = total === 0;
+    if (!total) group.open = false;
+  }
+  setLayerCount('hazard-count', total);
+  const note = $('hazard-note');
+  if (note)
+    note.textContent = total
+      ? total +
+        ' zone' +
+        (total === 1 ? '' : 's') +
+        ' on ' +
+        mapName(currentMapId) +
+        ', from the bundled tarkov.dev map data. Drawn where that data places them.'
+      : '';
+}
 function updateLayerCounts() {
+  updateHazardCounts();
   renderBattlepass();
   const pmc = allPois.filter(
     p => p.kind === 'extract' && (p.category === 'extract-pmc' || p.category === 'extract-shared')
@@ -1993,8 +2394,20 @@ function updateLayerCounts() {
   setLayerCount('loot-container-count', containerCount);
   setLayerCount('loose-loot-count', looseCount);
   setLayerCount('lab-keycard-count', labDoorEntries().length);
-  setLayerCount('landmark-count', (landmarksByMap[currentMapId] || []).length);
+  const landmarkTotal = (landmarksByMap[currentMapId] || []).length + derivedLandmarks().length;
+  setLayerCount('landmark-count', landmarkTotal);
+  const landmarkRow = $('layer-labels').closest('label');
+  $('layer-labels').disabled = landmarkTotal === 0;
+  if (landmarkRow) landmarkRow.hidden = landmarkTotal === 0;
   setLayerCount('custom-count', ensureRaidData().customMarkers[currentMapId].length);
+  const doorTotal = doorEntries().length;
+  setLayerCount('door-count', doorTotal);
+  $('layer-doors').disabled = doorTotal === 0;
+  $('layer-doors-row').hidden = doorTotal === 0;
+  const switchTotal = switchEntries().length;
+  setLayerCount('switch-count', switchTotal);
+  $('layer-switches').disabled = switchTotal === 0;
+  $('layer-switches-row').hidden = switchTotal === 0;
   for (const [key, control, id] of containerLayers)
     setLootLayerAvailability(
       control,
@@ -2041,7 +2454,10 @@ function layerSettings() {
     labsKeycards: $('layer-lab-keycards').checked,
     labsKeycardNames: $('layer-lab-keycard-labels').checked,
     landmarks: $('layer-labels').checked,
-    customMarkers: $('layer-custom').checked
+    customMarkers: $('layer-custom').checked,
+    lockedDoors: $('layer-doors').checked,
+    switches: $('layer-switches').checked,
+    ...Object.fromEntries(hazardKinds.map(kind => [kind.key, $(kind.control).checked]))
   };
   for (const [key, id] of [...containerLayers, ...looseLayers])
     settings[id.replace(/^layer-/, '').replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] =
@@ -2058,9 +2474,12 @@ async function saveLayers() {
 }
 function renderAllMapLayers() {
   updateLayerChildren();
+  renderHazards();
   renderMarkers();
   renderExtractLabels();
   renderKeycardDoors();
+  renderDoors();
+  renderSwitches();
   renderLandmarks();
   renderCustomMarkers();
   renderLoot();
@@ -3344,8 +3763,11 @@ async function switchMap(id, { filterQuests = false } = {}) {
   renderMarkers();
   renderLoot();
   renderKeycardDoors();
+  renderDoors();
+  renderSwitches();
   renderLandmarks();
   renderExtractLabels();
+  renderHazards();
   updatePosition();
 }
 async function loadMode() {
@@ -3357,6 +3779,7 @@ async function loadMode() {
     q => !q.profiles || q.profiles.includes(data.mode)
   );
   quests = [...allData.quests, ...extras].sort((a, b) => a.name.localeCompare(b.name));
+  indexObjectiveOwners();
   if (mapDefinition)
     $('location-sub').textContent =
       quests.filter(q => q.mapIds.includes(currentMapId)).length + ' quests · Norvinsk region';
@@ -3602,6 +4025,9 @@ async function start() {
     labsKeycardNames: false,
     landmarks: true,
     customMarkers: true,
+    lockedDoors: false,
+    switches: false,
+    ...Object.fromEntries(hazardKinds.map(kind => [kind.key, false])),
     ...data.settings.mapLayers
   };
   const lootControls = [...containerLayers, ...looseLayers].map(([, id]) => [
@@ -3619,12 +4045,18 @@ async function start() {
     ['layer-lab-keycards', 'labsKeycards'],
     ['layer-lab-keycard-labels', 'labsKeycardNames'],
     ['layer-labels', 'landmarks'],
-    ['layer-custom', 'customMarkers']
+    ['layer-custom', 'customMarkers'],
+    ['layer-doors', 'lockedDoors'],
+    ['layer-switches', 'switches'],
+    ...hazardKinds.map(kind => [kind.control, kind.key])
   ])
     $(id).checked = !!data.settings.mapLayers[key];
   updateLayerChildren();
-  [mapDefinitions, labKeycards, specialTracks] = await Promise.all([
+  [mapDefinitions, keyCatalog, labKeycards, specialTracks] = await Promise.all([
     fetch('data/maps.json').then(r => r.json()),
+    fetch('data/keys.json')
+      .then(r => r.json())
+      .then(doc => doc.keys),
     fetch('data/lab-keycards.json')
       .then(r => r.json())
       .then(doc => doc.keycards),
@@ -3689,6 +4121,11 @@ async function start() {
     renderExtractLabels();
     saveLayers();
   };
+  for (const kind of hazardKinds)
+    $(kind.control).onchange = () => {
+      renderHazards();
+      saveLayers();
+    };
   for (const [, id] of [...containerLayers, ...looseLayers])
     $(id).onchange = () => {
       if ($(id).checked && !((lootData?.containers?.length || 0) + (lootData?.loose?.length || 0)))
@@ -3732,10 +4169,23 @@ async function start() {
   $('layer-lab-keycards').onchange = () => {
     updateLayerChildren();
     renderKeycardDoors();
+    renderDoors();
+    renderSwitches();
     saveLayers();
   };
   $('layer-lab-keycard-labels').onchange = () => {
     renderKeycardDoors();
+    renderDoors();
+    renderSwitches();
+    saveLayers();
+  };
+  $('layer-switches').onchange = () => {
+    renderSwitches();
+    saveLayers();
+  };
+  $('layer-doors').onchange = () => {
+    renderDoors();
+    renderSwitches();
     saveLayers();
   };
   $('layer-labels').onchange = () => {

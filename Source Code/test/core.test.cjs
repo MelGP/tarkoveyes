@@ -304,3 +304,142 @@ test('map artwork waits for the image to load, not for a decoded frame',()=>{
   const bitmap=maps.filter(map=>map.baseAsset.type==='image').map(map=>map.id);
   assert.deepEqual(bitmap.sort(),['icebreaker','the-labyrinth'],'the maps that depend on this path');
 });
+test('every bundled hazard zone can be drawn, and the renderer wires the layer',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'../app/index.html'),'utf8');
+  const main=fs.readFileSync(path.join(__dirname,'../main.cjs'),'utf8');
+  assert.match(renderer,/function renderHazards\(/);
+  assert.match(html,/<g id="hazards">/,'the map has a layer to draw zones into');
+  const types=['minefield','sniper','mortar','hazard'];
+  for(const type of types){
+    assert.match(html,new RegExp('id="layer-hazard-'+type+'"'),type+' has a control');
+    assert.match(main,new RegExp("'hazard"+type[0].toUpperCase()+type.slice(1)+"'"),type+' is an accepted saved layer');
+  }
+  const maps=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/maps.json'),'utf8'));
+  const seen=new Map();let outlines=0,total=0;
+  for(const map of maps){
+    const file=path.join(__dirname,'../app/data/poi',map.id+'.json');
+    if(!fs.existsSync(file))continue;
+    for(const poi of JSON.parse(fs.readFileSync(file,'utf8')).pois){
+      if(poi.kind!=='hazard')continue;
+      total++;
+      const type=poi.hazardType||'hazard';
+      assert.ok(types.includes(type),map.id+' has an unknown hazard type: '+type);
+      seen.set(type,(seen.get(type)||0)+1);
+      assert.ok(Number.isFinite(poi.position?.x)&&Number.isFinite(poi.position?.z),map.id+' hazard without a position');
+      for(const corner of poi.outline||[]){
+        assert.ok(Number.isFinite(corner.x)&&Number.isFinite(corner.z),map.id+' hazard outline corner is not a point');
+      }
+      if((poi.outline||[]).length>2)outlines++;
+    }
+  }
+  assert.ok(total>=600,'the bundled maps still carry their hazard zones ('+total+')');
+  assert.equal(outlines,total,'every hazard zone has a polygon to draw');
+  assert.ok(seen.get('minefield')>=500&&seen.get('sniper')>=50,'minefields and sniper zones are present');
+});
+test('landmarks are derived for the maps the hand-placed list never covered',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  assert.match(renderer,/function derivedLandmarks\(/);
+  assert.match(renderer,/const internalLabel = \/_\|\\d\|\[a-z\]\[A-Z\]\/;/,'the camelCase test must stay case-sensitive');
+  assert.match(renderer,/const vagueLabel = \/\\b\(spawn\|ambush\|snipe\|zone\|any\)\\b\/i;/);
+  assert.ok(![...renderer].some(ch => { const code = ch.charCodeAt(0); return code < 9 || code === 11 || code === 12 || (code >= 14 && code < 32); }), 'no control characters may leak into the renderer source');
+  // The same rules the renderer applies, so a POI refresh that renames zones to
+  // internal identifiers fails here instead of captioning the map with them.
+  const internalLabel=/_|\d|[a-z][A-Z]/,vagueLabel=/\b(spawn|ambush|snipe|zone|any)\b/i;
+  const floorLabel=/^(first|second|third|fourth|ground)\s+(floor|level)$|^basement$/i;
+  const named=mapId=>{
+    const file=path.join(__dirname,'../app/data/poi',mapId+'.json');
+    if(!fs.existsSync(file))return [];
+    const out=new Set();
+    for(const poi of JSON.parse(fs.readFileSync(file,'utf8')).pois){
+      let label=null;
+      if(poi.kind==='boss-zone')label=poi.name.includes('·')?poi.name.split('·').pop().trim():null;
+      else if(poi.kind==='btr')label=poi.name;
+      if(!label||label.length<3||internalLabel.test(label)||vagueLabel.test(label)||floorLabel.test(label))continue;
+      out.add(label.toUpperCase());
+    }
+    return [...out];
+  };
+  for(const [mapId,least] of [['streets-of-tarkov',8],['woods',10],['lighthouse',8],['shoreline',5],['interchange',4]])
+    assert.ok(named(mapId).length>=least,mapId+' should still yield place names, got '+named(mapId).length);
+  for(const mapId of ['terminal','the-labyrinth'])
+    assert.equal(named(mapId).length,0,mapId+' has only internal zone names and must stay unlabelled');
+  const woods=named('woods');
+  assert.ok(woods.includes('SAWMILL')&&woods.includes('OLD SAWMILL'),'Sawmill and Old Sawmill are different places and both belong on the map');
+  for(const mapId of ['customs','woods','streets-of-tarkov','lighthouse'])
+    for(const label of named(mapId))
+      assert.ok(!internalLabel.test(label)&&!vagueLabel.test(label),mapId+' kept an internal-looking label: '+label);
+});
+test('every locked door resolves to a key name the map can print',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'../app/index.html'),'utf8');
+  const main=fs.readFileSync(path.join(__dirname,'../main.cjs'),'utf8');
+  assert.match(renderer,/function renderDoors\(/);
+  assert.match(renderer,/function doorsForKeyName\(/,'the raid kit needs to find doors from a key name');
+  assert.match(renderer,/function keyDoorButton\(/);
+  assert.match(html,/<g id="door-markers">/);
+  assert.match(html,/id="layer-doors"/);
+  assert.match(main,/'lockedDoors'/,'the saved layer key is accepted by the main process');
+  const keys=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/keys.json'),'utf8')).keys;
+  const cards=new Set(JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/lab-keycards.json'),'utf8')).keycards.map(card=>card.id));
+  const maps=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/maps.json'),'utf8'));
+  let doors=0,labKeycardDoors=0;
+  for(const map of maps){
+    const file=path.join(__dirname,'../app/data/poi',map.id+'.json');
+    if(!fs.existsSync(file))continue;
+    for(const poi of JSON.parse(fs.readFileSync(file,'utf8')).pois){
+      if(poi.kind!=='locked-door')continue;
+      doors++;
+      assert.ok((poi.keyIds||[]).length,map.id+' has a locked door with no key');
+      for(const id of poi.keyIds){
+        assert.ok(keys[id]&&keys[id].name,map.id+' door needs key '+id+' which keys.json cannot name');
+        assert.ok(!/^[0-9a-f]{24}$/.test(keys[id].name),'a key name must not just be an id');
+      }
+      if(map.id==='the-lab'&&poi.keyIds.some(id=>cards.has(id)))labKeycardDoors++;
+    }
+  }
+  assert.ok(doors>=320,'the bundled maps still carry their locked doors ('+doors+')');
+  assert.equal(labKeycardDoors,9,'Labs keycard doors stay with the keycard layer, which the door layer skips');
+  // Quest keys must be nameable too, or the raid kit button cannot find their doors.
+  for(const file of ['quests.json','quests-seasonal.json']){
+    const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data',file),'utf8'));
+    for(const quest of catalog.quests)
+      for(const key of quest.neededKeys||[])
+        if(key.id)assert.ok(keys[key.id],file+': '+quest.name+' needs key '+key.id+' which keys.json cannot name');
+  }
+});
+test('switch chains resolve to the extracts and switches they operate',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'../app/index.html'),'utf8');
+  const main=fs.readFileSync(path.join(__dirname,'../main.cjs'),'utf8');
+  assert.match(renderer,/function renderSwitches\(/);
+  assert.match(renderer,/function switchEffects\(/);
+  assert.match(html,/<g id="switch-markers">/);
+  assert.match(html,/id="layer-switches"/);
+  assert.match(main,/'switches'/);
+  const maps=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/maps.json'),'utf8'));
+  let switches=0,effects=0,toExtract=0;
+  const chained=[];
+  for(const map of maps){
+    const file=path.join(__dirname,'../app/data/poi',map.id+'.json');
+    if(!fs.existsSync(file))continue;
+    const pois=JSON.parse(fs.readFileSync(file,'utf8')).pois,byId=new Map(pois.map(p=>[p.id,p]));
+    for(const poi of pois){
+      if(poi.kind!=='switch')continue;
+      switches++;
+      assert.ok(poi.name&&poi.name.trim(),map.id+' has a switch with no name');
+      for(const step of poi.activates||[]){
+        effects++;
+        const target=byId.get(step.targetId);
+        assert.ok(target,map.id+': '+poi.name+' operates '+step.targetId+' which is not in that map');
+        assert.ok(target.name,map.id+': '+poi.name+' operates something unnamed');
+        if(target.kind==='extract')toExtract++;
+        if(target.kind==='switch'&&(target.activates||[]).length)chained.push(map.id+'/'+poi.name);
+      }
+    }
+  }
+  assert.equal(switches,39,'the bundled maps still carry their switches');
+  assert.ok(effects>=15,'switch effects are still recorded ('+effects+')');
+  assert.ok(toExtract>=8,'switches that open an extract are the useful ones ('+toExtract+')');
+  assert.ok(chained.includes('reserve/D-2 Power Switch'),'the D-2 two-step chain must survive, it is what the popup explains');
+});
