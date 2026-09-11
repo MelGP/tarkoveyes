@@ -43,3 +43,26 @@ test('Battle Pass controls target the existing tactical map without another map 
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),script=fs.readFileSync(path.join(root,'battlepass.js'),'utf8');
   assert.match(html,/<g id="battlepass-markers"><\/g>/);assert.match(html,/id="layer-battlepass"/);assert.doesNotMatch(html,/id="bp-dialog"|id="bp-open"|id="bp-svg"/);assert.doesNotMatch(script,/battlepassAtlas|chooseMap|bp-map-image/);assert.match(script,/\$\('map-popup'\)/);
 });
+test('English location notes are attached to real points and the Korean original is kept',()=>{
+  const translations=JSON.parse(fs.readFileSync(path.join(__dirname,'../tools/sources/battlepass/note-translations.json'),'utf8'));
+  const hangul=/[ᄀ-ᇿ㄰-㆏가-힯]/;
+  let declared=0;
+  for(const [mapId,notes] of Object.entries(translations.maps)){
+    const map=doc.maps.find(m=>m.id===mapId);
+    assert.ok(map,'translation file names a map that exists: '+mapId);
+    for(const [id,text] of Object.entries(notes)){
+      const point=map.points.find(p=>p.id===id);
+      assert.ok(point,mapId+'/'+id+' is translated but no such point exists');
+      assert.ok(point.sourceNote.trim(),mapId+'/'+id+' has a translation but no original note');
+      assert.equal(point.note,text,mapId+'/'+id+' was not merged into the catalog');
+      assert.ok(!hangul.test(text),mapId+'/'+id+' translation still contains Hangul');
+      declared++;
+    }
+  }
+  const carried=doc.maps.flatMap(m=>m.points).filter(p=>p.note);
+  assert.equal(carried.length,declared,'every merged note comes from the translation file');
+  for(const point of carried)assert.ok(point.sourceNote.trim(),point.id+' lost its Korean original');
+  const renderer=fs.readFileSync(path.join(root,'battlepass.js'),'utf8');
+  assert.match(renderer,/point\.note/,'the popup renders the English note');
+  assert.match(renderer,/Korean/,'the popup still offers the Korean original');
+});

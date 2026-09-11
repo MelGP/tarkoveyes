@@ -61,7 +61,20 @@ const documentIds = {
 const labels = {blueprints:'Blueprints',financial:'Financial',medical:'Medical',pmc:'PMC files',project:'Project',technical:'Technical',test:'Test',user:'User',classified:'Classified'};
 const colors = {blueprints:'#8bbfe4',financial:'#dfc879',medical:'#d5a4bc',pmc:'#b2c58b',project:'#e7b77e',technical:'#a6cfc8',test:'#b7a0dd',user:'#d7c9a4',classified:'#b8b8b8'};
 const aliases = {ground_zero:'ground-zero',lab:'the-lab',labyrinth:'the-labyrinth',streets_of_tarkov:'streets-of-tarkov'};
+// English renderings of the Korean location notes, kept beside the pinned
+// sources so a rebuild never loses them. Keyed by map because point ids repeat
+// across maps. Missing entries simply leave the point without an English note.
+function noteTranslations() {
+  const file = path.join(sourceDir, 'note-translations.json');
+  if (!fs.existsSync(file)) return {};
+  const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+  for (const [map, notes] of Object.entries(doc.maps || {}))
+    for (const [id, text] of Object.entries(notes))
+      if (typeof text !== 'string' || !text.trim()) throw Error('Empty translation: ' + map + '/' + id);
+  return doc.maps || {};
+}
 function build() {
+  const translations = noteTranslations();
   const sourceApp = fs.readFileSync(path.join(sourceDir, 'js-app.js'), 'utf8');
   const items = JSON.parse(fs.readFileSync(path.join(sourceDir, 'tarkov-items.json'))).data.items;
   const english = JSON.parse(fs.readFileSync(path.join(sourceDir, 'tarkov-items-en.json'))).data;
@@ -87,7 +100,8 @@ function build() {
         if (!/^assets\/previews\/[\w/-]+\.webp$/.test(photo)) throw Error('Unsafe photo path: ' + photo);
         downloads.set('assets/battlepass/' + photo.slice(7), upstream + photo);
       }
-      points.push({id:row.id,category:row.category,x,y,sourceCoords:row.coords,approximate:/부정확/.test(row.detailDesc || ''),sourceNote:row.detailDesc || '',photos:photos.map(photo=>'assets/battlepass/' + photo.slice(7))});
+      const note = (translations[id] || {})[row.id];
+      points.push({id:row.id,category:row.category,x,y,sourceCoords:row.coords,approximate:/부정확/.test(row.detailDesc || ''),sourceNote:row.detailDesc || '',...(note?{note}:{}),photos:photos.map(photo=>'assets/battlepass/' + photo.slice(7))});
     }
     const image = 'assets/battlepass/maps/' + path.basename(imagePath);
     downloads.set(image, upstream + imagePath);
@@ -99,7 +113,13 @@ function build() {
   const doc = {schemaVersion:1,generatedAt:new Date().toISOString(),source:'https://perofunyang.github.io/battlepass_interactive_map/en.html',sourceCommit:commit,license:'CC BY-NC 4.0',coordinateSystem:'source-image-top-left',tarkovDevSource:'https://json.tarkov.dev/regular/items',tarkovDevSpawnCount:devSpawnCount,categories,maps};
   fs.writeFileSync(path.join(root,'app/data/battlepass-spawns.json'),JSON.stringify(doc));
   fs.writeFileSync(path.join(sourceDir,'asset-downloads.json'),JSON.stringify([...downloads],null,2));
-  console.log(JSON.stringify({maps:maps.map(m=>({map:m.id,points:m.points.length})),total:maps.reduce((n,m)=>n+m.points.length,0),approximate:maps.flatMap(m=>m.points).filter(p=>p.approximate).length,assets:downloads.size,tarkovDevSpawnCount:devSpawnCount},null,2));
+  const all = maps.flatMap(m=>m.points);
+  const translated = all.filter(p=>p.note).length, withNote = all.filter(p=>p.sourceNote.trim()).length;
+  for (const [map, notes] of Object.entries(translations)) {
+    const known = new Set((maps.find(m=>m.id===map)||{points:[]}).points.map(p=>p.id));
+    for (const id of Object.keys(notes)) if (!known.has(id)) throw Error('Translation for a point that does not exist: ' + map + '/' + id);
+  }
+  console.log(JSON.stringify({maps:maps.map(m=>({map:m.id,points:m.points.length,translated:m.points.filter(p=>p.note).length})),total:all.length,approximate:all.filter(p=>p.approximate).length,koreanNotes:withNote,englishNotes:translated,assets:downloads.size,tarkovDevSpawnCount:devSpawnCount},null,2));
   return downloads;
 }
 async function downloadAssets(downloads) {

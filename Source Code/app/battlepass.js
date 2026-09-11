@@ -139,6 +139,7 @@
           'The original source also marks this position as approximate.'
         )
       );
+    if (point.note) pop.append(node('p', 'bp-note', point.note));
     const photos = node('div', 'bp-popup-photos');
     for (const [i, photo] of point.photos.entries()) {
       const button = node('button', 'bp-photo'),
@@ -158,7 +159,11 @@
     pop.append(photos);
     if (point.sourceNote) {
       const detail = node('details', 'bp-original-note'),
-        summary = node('summary', '', 'Source note (Korean)'),
+        summary = node(
+          'summary',
+          '',
+          point.note ? 'Original note (Korean)' : 'Source note (Korean, not translated)'
+        ),
         text = node('p', '', point.sourceNote);
       text.lang = 'ko';
       detail.append(summary, text);

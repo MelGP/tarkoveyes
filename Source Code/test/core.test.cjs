@@ -289,3 +289,18 @@ test('quest route filters have current source flags and meaningful catalog cover
 
 
 
+test('map artwork waits for the image to load, not for a decoded frame',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../app/app.js'),'utf8');
+  // image.decode() never settles while the window is hidden or fully occluded,
+  // which stranded the image-based maps on "Loading ..." whenever the map changed
+  // with the app in the background. onload resolves either way.
+  const code=renderer.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,'');
+  assert.doesNotMatch(code,/\.decode\(\)/,'the renderer must not await image.decode()');
+  assert.match(renderer,/function loadImage\(/);
+  assert.match(renderer,/image\.onload\s*=/);
+  assert.match(renderer,/image\.onerror\s*=/);
+  assert.match(renderer,/const image = await loadImage\(path\)/);
+  const maps=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/maps.json'),'utf8'));
+  const bitmap=maps.filter(map=>map.baseAsset.type==='image').map(map=>map.id);
+  assert.deepEqual(bitmap.sort(),['icebreaker','the-labyrinth'],'the maps that depend on this path');
+});

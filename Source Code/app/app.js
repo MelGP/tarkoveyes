@@ -3242,6 +3242,19 @@ function initMapEvents() {
 function localAssetPath(asset) {
   return 'assets' + asset.path;
 }
+// Waits for the bitmap itself, not for a decoded frame. image.decode() never
+// settles while the window is hidden or fully occluded, which left an
+// image-based map (Icebreaker, The Labyrinth) stuck on "Loading ..." whenever
+// the map changed with Raid Notes in the background - exactly what happens when
+// a raid starts while the user is in the game. onload fires either way.
+function loadImage(path) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(Error('Missing map artwork: ' + path));
+    image.src = path;
+  });
+}
 async function loadMapArtwork(definition) {
   const artwork = $('artwork'),
     asset = definition.baseAsset,
@@ -3262,9 +3275,7 @@ async function loadMapArtwork(definition) {
       ...[...doc.documentElement.childNodes].map(node => document.importNode(node, true))
     );
   } else {
-    const image = new Image();
-    image.src = path;
-    await image.decode();
+    const image = await loadImage(path);
     W = image.naturalWidth;
     H = image.naturalHeight;
     artwork.replaceChildren(
