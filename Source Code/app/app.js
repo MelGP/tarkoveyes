@@ -101,11 +101,19 @@ function point(p) {
     y: ((b.maxZ - q.z) / (b.maxZ - b.minZ)) * H
   };
 }
-function toast(message) {
-  $('toast').textContent = message;
-  $('toast').hidden = false;
+/* A toast reports either 'done' or 'that did not work', and both wore the same
+ * amber. Losing progress is the worst thing this application can report, so a
+ * failure gets its own tone, interrupts rather than waits its turn, and stays
+ * up long enough to read a sentence about disk space. */
+function toast(message, tone) {
+  const el = $('toast');
+  const failed = tone === 'error';
+  el.classList.toggle('toast-error', failed);
+  el.setAttribute('role', failed ? 'alert' : 'status');
+  el.textContent = message;
+  el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => ($('toast').hidden = true), 4500);
+  toastTimer = setTimeout(() => (el.hidden = true), failed ? 7000 : 4500);
 }
 function profile() {
   return data.profiles[data.mode];
@@ -543,6 +551,11 @@ function renderList() {
   const filterSummary = $('filter-summary');
   if (filterSummary) {
     const parts = [];
+    /* The search narrows the list as much as any of the selects do, and
+       leaving it out made the summary read "All quests" over eleven rows of
+       five hundred - which looks like the list is broken rather than
+       searched. */
+    if (search) parts.push('"' + $('quest-search').value.trim() + '"');
     if (map) parts.push(mapName(map));
     if (trader) parts.push(trader);
     parts.push($('status-filter').selectedOptions[0].textContent);
@@ -628,11 +641,42 @@ function alignBrief() {
   main.classList.toggle('brief-tied', tied);
 }
 
+/* The brief is a floating card now, so it needs to introduce itself: a
+ * landmark with a name, rather than an unlabelled aside that a screen reader
+ * announces as nothing in particular. Set from whatever the card is currently
+ * showing - a quest, or My Raid. */
+function describeBrief(label) {
+  const brief = $('details');
+  if (!brief) return;
+  brief.setAttribute('role', 'region');
+  brief.setAttribute('aria-label', label);
+}
 function scheduleBriefAlign() {
   if (briefAlignFrame) return;
   briefAlignFrame = requestAnimationFrame(alignBrief);
 }
 
+/* "logs synced" says the connection works; it does not say whether it has
+ * looked recently, which is the thing you want to know after a raid. The
+ * footer line that carried the timestamp is hidden in the rail - showing it
+ * costs a quest row - so the freshness goes where you already look for the
+ * connection, at no extra height. A time alone would be a lie a day later,
+ * so anything older than today says the date instead. */
+function whenBriefly(at) {
+  const then = new Date(at);
+  if (Number.isNaN(then.getTime())) return 'recently';
+  const now = new Date();
+  const sameDay =
+    then.getDate() === now.getDate() &&
+    then.getMonth() === now.getMonth() &&
+    then.getFullYear() === now.getFullYear();
+  /* 24-hour, because "08:17 AM" is three characters longer than the 244px
+     rail has and the line truncated to "logs read 08:17…" - which loses the
+     thing the line was added to say. */
+  return sameDay
+    ? then.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+    : then.toLocaleDateString();
+}
 function setDetailsCollapsed(collapsed) {
   detailsCollapsed = !!collapsed;
   const main = document.querySelector('main');
@@ -716,7 +760,7 @@ async function saveRaidPreferences() {
   try {
     await bridge.raidPreferences(payload);
   } catch {
-    toast('Could not save quest visibility.');
+    toast('Could not save quest visibility.', 'error');
   }
 }
 function renderDetail() {
@@ -809,7 +853,7 @@ function renderDetail() {
       toast('Quest progress saved locally.');
     } catch {
       select.value = status(q);
-      toast('Could not save progress. Check available disk space.');
+      toast('Could not save progress. Check available disk space.', 'error');
     }
   };
   stateRow.append(select);
@@ -876,7 +920,7 @@ function renderDetail() {
         renderMarkers();
       } catch {
         check.checked = isDone(o);
-        toast('Could not save the objective.');
+        toast('Could not save the objective.', 'error');
       }
     };
     const body = el('div');
@@ -932,7 +976,7 @@ function renderDetail() {
           renderDetail();
           renderMarkers();
         } catch {
-          toast('Could not save the counter.');
+          toast('Could not save the counter.', 'error');
         }
       };
       minus.onclick = () => set(Math.max(0, progress.value - 1));
@@ -1012,6 +1056,7 @@ function renderDetail() {
         '. Possible item locations are candidates, not live loot.'
     )
   );
+  describeBrief(q ? q.name + ' — quest brief' : 'Quest brief');
   scheduleBriefAlign();
 }
 function renderBattlepass() {
@@ -2253,7 +2298,7 @@ function renderCustomMarkers() {
           toast('Marker deleted.');
         } catch {
           remove.disabled = false;
-          toast('Could not delete the marker.');
+          toast('Could not delete the marker.', 'error');
         }
       };
       actions.append(edit, remove);
@@ -2784,6 +2829,7 @@ function renderMyRaid(focus = false) {
   }
   $('focus-label').textContent =
     'My Raid · ' + pts.length + ' map point' + (pts.length === 1 ? '' : 's');
+  describeBrief('My Raid on ' + currentName);
   if (focus) focusRaid(visible);
 }
 function showActiveQuests() {
@@ -2793,7 +2839,11 @@ function showActiveQuests() {
   selected = null;
   setDetailsCollapsed(false);
   $('map-filter').value = currentMapId;
-  $('status-filter').value = 'active';
+  // Only narrow to Active when there is something active to show. On a map
+  // with no active quest this used to empty the journal and leave the filter
+  // changed, so the button that means "what am I doing this raid" answered by
+  // hiding all 503 quests behind "No quests match these filters".
+  if (active.length) $('status-filter').value = 'active';
   renderList();
   renderMyRaid(true);
   renderMarkers();
@@ -2954,7 +3004,7 @@ async function saveLayers() {
   try {
     await bridge.mapLayers(data.settings.mapLayers);
   } catch {
-    toast('Could not save map layer preferences.');
+    toast('Could not save map layer preferences.', 'error');
   }
 }
 function renderAllMapLayers() {
@@ -3113,7 +3163,7 @@ function updatePosition() {
       ' files · ' +
       (observer.logsConnected
         ? profile().questSync?.lastScanAt
-          ? 'logs synced'
+          ? 'logs read ' + whenBriefly(profile().questSync.lastScanAt)
           : 'raid logs connected'
         : 'map confirmation needed');
   } else {
@@ -3324,12 +3374,16 @@ function renderDashboard() {
           ').'
       )
     );
+  /* One neutral for all five. Each bar already carries its own label and its
+     own numbers, so five different colours added nothing to read and cost the
+     greyscale rule the rest of the interface keeps. */
+  const barFill = '#9aa0a6';
   for (const [label, value, total, color] of [
-    ['Quests', done, quests.length, '#97d5af'],
-    ['Objectives', objectiveDone, objectiveTotal, '#f4c980'],
-    ['Tracked quests', active + done + failed, quests.length, '#83c8e8'],
-    ['Kappa route', ...routeRow(kappa, '#d8b06a')],
-    ['Lightkeeper route', ...routeRow(lightkeeper, '#9fb8d8')]
+    ['Quests', done, quests.length, barFill],
+    ['Objectives', objectiveDone, objectiveTotal, barFill],
+    ['Tracked quests', active + done + failed, quests.length, barFill],
+    ['Kappa route', ...routeRow(kappa, barFill)],
+    ['Lightkeeper route', ...routeRow(lightkeeper, barFill)]
   ].filter(row => row[2] > 0)) {
     const row = el('div', 'dashboard-progress');
     row.append(el('span', '', label), el('small', '', value + ' / ' + total));
@@ -4107,7 +4161,7 @@ function runCommand(index = commandIndex) {
   if (!entry) return;
   $('command-dialog').close();
   Promise.resolve(entry.run()).catch(error =>
-    toast('Could not open that result: ' + error.message)
+    toast('Could not open that result: ' + error.message, 'error')
   );
 }
 function renderCommandResults(reset = false) {
@@ -4320,7 +4374,7 @@ async function switchMap(id, { filterQuests = false } = {}) {
   updateCompass();
   $('location').value = id;
   $('location-sub').textContent =
-    quests.filter(q => q.mapIds.includes(id)).length + ' quests · Norvinsk region';
+    quests.filter(q => q.mapIds.includes(id)).length + ' quests on this map';
   $('map-svg').setAttribute('aria-label', currentName + ' map');
   $('map-viewport').setAttribute('aria-label', currentName + ' map: drag to pan, scroll to zoom');
   updateLayerCounts();
@@ -4361,7 +4415,7 @@ async function loadMode() {
   indexObjectiveOwners();
   if (mapDefinition)
     $('location-sub').textContent =
-      quests.filter(q => q.mapIds.includes(currentMapId)).length + ' quests · Norvinsk region';
+      quests.filter(q => q.mapIds.includes(currentMapId)).length + ' quests on this map';
   $('trader').replaceChildren(
     new Option('All traders', ''),
     ...[...new Set(quests.map(q => q.traderName))].sort().map(t => new Option(t, t))
@@ -4829,7 +4883,7 @@ async function start() {
       await switchMap($('location').value, { filterQuests: true });
     } catch {
       $('location').value = previous;
-      toast('Could not load that bundled map.');
+      toast('Could not load that bundled map.', 'error');
     }
   };
   $('show-active').onclick = showActiveQuests;
@@ -4855,7 +4909,7 @@ async function start() {
           ' progress.'
       );
     } catch {
-      toast('Could not switch profiles.');
+      toast('Could not switch profiles.', 'error');
     }
   };
   $('setup-tab').onclick = connection;
@@ -4886,7 +4940,7 @@ async function start() {
       );
     } catch {
       $('item-hotkey-enabled').checked = !enabled;
-      toast('Could not change the inventory shortcut.');
+      toast('Could not change the inventory shortcut.', 'error');
     }
   };
   $('item-value-threshold').onchange = async () => {
@@ -4905,7 +4959,7 @@ async function start() {
     } catch {
       data.settings.itemValueThreshold = previous;
       input.value = previous;
-      toast('Could not save the loot threshold.');
+      toast('Could not save the loot threshold.', 'error');
     }
   };
   $('dashboard-button').onclick = openDashboard;
@@ -4942,7 +4996,7 @@ async function start() {
           ' applied. Completed steps are confirmed; partial counts remain reviewable.'
       );
     } catch (e) {
-      toast('Could not apply the scan: ' + e.message);
+      toast('Could not apply the scan: ' + e.message, 'error');
     } finally {
       button.disabled = false;
     }
@@ -5031,7 +5085,7 @@ async function start() {
       const file = await bridge.exportBackup();
       if (file) toast('Backup exported.');
     } catch (e) {
-      toast('Could not export the backup: ' + e.message);
+      toast('Could not export the backup: ' + e.message, 'error');
     }
   };
   $('import-backup').onclick = async () => {
@@ -5209,7 +5263,14 @@ async function start() {
          the time it needs scrolling into view. */
       requestAnimationFrame(() => {
         const now = $('quest-list').querySelector('.quest-row.selected');
-        if (now) now.scrollIntoView({ block: 'nearest' });
+        if (!now) return;
+        /* Selection moved but focus did not, so Tab carried on from the top of
+           the page and a screen reader was told nothing had happened. The row
+           is a button carrying the quest name and `aria-pressed`, so putting
+           focus on it says the right thing. Scroll it deliberately rather than
+           letting focus do it, which jumps. */
+        now.focus({ preventScroll: true });
+        now.scrollIntoView({ block: 'nearest' });
       });
       return;
     }
@@ -5238,8 +5299,9 @@ async function start() {
       else if (mapFocus) setMapFocus(false);
     }
   });
-  if (boot.storageError) toast(boot.storageError);
-  else if (boot.logRefresh?.error) toast('Automatic log update failed: ' + boot.logRefresh.error);
+  if (boot.storageError) toast(boot.storageError, 'error');
+  else if (boot.logRefresh?.error)
+    toast('Automatic log update failed: ' + boot.logRefresh.error, 'error');
   else if (boot.logRefresh?.summary?.[data.mode]?.changed) {
     activityUnread = boot.logRefresh.summary[data.mode].changed;
     updateActivityBadge();

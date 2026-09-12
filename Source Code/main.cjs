@@ -499,6 +499,10 @@ const pictureless = 0.55;
 // How sure the artwork has to be before it may propose a name the reading never
 // offered at all.
 const pictureCertain = 0.8;
+// The confidence at which a name is taken as read. Used twice, and the two
+// uses mean the same thing: above this the scan stops widening, and above this
+// the artwork is not asked for a second opinion.
+const nameSettles = 0.76;
 let appearanceCatalog, pictureCatalog;
 
 // The artwork of every item, loaded the first time the shortcut is used.
@@ -603,6 +607,16 @@ function identify(lines, catalog, seen, around) {
   // something else decides between them.
   const matches = matchItemLines(lines, catalog, weakNameKeep, weakNameFloor);
   if (matches.length < 2) return matches.slice(0, shownMatches);
+  // The artwork is here for a reading too damaged to name the item. When the
+  // name is settled it is the better evidence, and letting the pictures re-rank
+  // it anyway costs answers: the template pack has a partial, differently lit
+  // view of one tile, and for four of the fourteen measured positions it scored
+  // the correct item below 0.5 - WI-FI Camera got 0.053 on its own artwork
+  // while something else got 0.571. Measured over the whole set, consulting the
+  // pictures unconditionally scores 11 of 14 and consulting them only for an
+  // unsettled name scores 13, with the flea market unchanged at 14. The result
+  // is flat for every threshold from 0.6 to 0.85, so it is not this number.
+  if (matches[0].confidence >= nameSettles) return matches.slice(0, shownMatches);
   const judged = pictures && around ? matchByPicture(matches, pictures, around) : null;
   if (judged) return judged;
   return rankByColour(matches, seen);
@@ -698,7 +712,7 @@ function rankByColour(matches, seen) {
     .slice(0, shownMatches);
 }
 function clearInventoryMatch(matches, lines) {
-  if (!matches[0] || matches[0].confidence < 0.76) return false;
+  if (!matches[0] || matches[0].confidence < nameSettles) return false;
   // The cursor is on a name and the answer came from somewhere else, so that
   // name was not read. Answering with a neighbour would be a guess: a misread
   // "Bandana (1)" once came back as the baseball cap on the row below.

@@ -36,6 +36,35 @@
     for (let i = 0; i < 80 && !$('map-loading').hidden; i++) await wait(250);
     await wait(300);
   };
+
+  /* Start from a known screen. The checks used to inherit whatever the last
+     person or script left behind - a status filter on "active", map focus on, a
+     dialog open - and then fail for a reason that had nothing to do with the
+     code. A check that can fail because of where the application happened to be
+     is not telling you anything. */
+  async function resetToDefaults() {
+    for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+    const main = document.querySelector('main');
+    if (main.classList.contains('map-focus')) {
+      $('focus-map').click();
+      await wait(400);
+    }
+    $('quest-search').value = '';
+    $('quest-search').dispatchEvent(new Event('input', { bubbles: true }));
+    $('status-filter').value = 'open';
+    $('status-filter').dispatchEvent(new Event('change', { bubbles: true }));
+    $('trader').value = '';
+    $('trader').dispatchEvent(new Event('change', { bubbles: true }));
+    if ($('path-filter')) {
+      $('path-filter').value = 'all';
+      $('path-filter').dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    const drawer = document.querySelector('.layer-disclosure');
+    if (drawer) drawer.open = false;
+    $('map-popup').hidden = true;
+    await wait(600);
+  }
+  await resetToDefaults();
   async function openMap(id) {
     const loc = $('location');
     loc.value = id;
@@ -229,6 +258,24 @@
     return 'all clear';
   });
 
+  await check('the rail is the same width whatever else is open', async () => {
+    if (!wideLayout) return 'narrow layout, no rail';
+    const main = document.querySelector('main');
+    const width = () => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width);
+    if (main.classList.contains('map-focus')) { $('focus-map').click(); await wait(500); }
+    if (main.classList.contains('details-collapsed')) { $('toggle-details').click(); await wait(600); }
+    const open = width();
+    $('toggle-details').click();
+    await wait(700);
+    const closed = width();
+    $('toggle-details').click();
+    await wait(700);
+    const reopened = width();
+    if (open !== closed || open !== reopened)
+      throw Error('rail moves: ' + open + ' open, ' + closed + ' closed, ' + reopened + ' reopened');
+    return open + 'px throughout';
+  });
+
   await check('Escape takes one thing off the screen at a time', async () => {
     const esc = async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -249,6 +296,106 @@
       if (steps[i] > steps[i - 1]) throw Error('a press added something: ' + steps.join(' > '));
     if (steps[steps.length - 1] !== 0) throw Error('something survived four presses: ' + steps.join(' > '));
     return steps.join(' > ');
+  });
+
+  await check('the layer legend is the colour the map draws', async () => {
+    // The layer icons keep their colour only because they match the layer.
+    // Measured once, none of them did: three sets of values for two concepts.
+    for (const box of document.querySelectorAll('.layers input[type=checkbox]')) {
+      const label = (box.closest('label')?.textContent || '').toLowerCase();
+      if (/extract|transit/.test(label) && !box.checked) {
+        box.checked = true;
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+    await wait(900);
+    const swatches = new Set();
+    for (const icon of document.querySelectorAll('.layers .icon')) {
+      const text = (icon.parentElement?.textContent || '').trim();
+      if (/extract|transit/i.test(text)) swatches.add(getComputedStyle(icon).color);
+    }
+    const strokes = new Set();
+    for (const marker of document.querySelectorAll('#markers > *')) {
+      const shape = marker.querySelector('circle,path,rect,polygon');
+      if (shape) strokes.add(getComputedStyle(shape).stroke);
+    }
+    if (!swatches.size) throw Error('no extract or transit swatches found');
+    const orphans = [...swatches].filter(c => !strokes.has(c));
+    if (orphans.length)
+      throw Error(
+        'swatch the map never draws: ' + orphans.join(', ') + '  (map draws ' + [...strokes].join(', ') + ')'
+      );
+    return swatches.size + ' swatches, all drawn on the map';
+  });
+
+  await check('a failed toast does not look like a confirmation', async () => {
+    const el = $('toast');
+    toast('Marker added.');
+    await wait(150);
+    const good = getComputedStyle(el);
+    const goodLook = good.backgroundColor + ' ' + good.boxShadow;
+    const goodRole = el.getAttribute('role');
+    toast('Could not save progress.', 'error');
+    await wait(150);
+    const bad = getComputedStyle(el);
+    const badLook = bad.backgroundColor + ' ' + bad.boxShadow;
+    const badRole = el.getAttribute('role');
+    toast('Marker updated.');
+    await wait(150);
+    const cleared = !el.classList.contains('toast-error') && el.getAttribute('role') === 'status';
+    el.hidden = true;
+    if (goodLook === badLook) throw Error('a failure is painted like a confirmation: ' + goodLook);
+    if (badRole !== 'alert') throw Error('a failure does not interrupt, role is ' + badRole);
+    if (goodRole !== 'status') throw Error('a confirmation interrupts, role is ' + goodRole);
+    if (!cleared) throw Error('the error tone survived the next toast');
+    return 'confirmation status, failure alert, tone cleared after';
+  });
+
+  await check('My Raid never empties the journal', async () => {
+    // The button that answers "what am I doing this raid" used to narrow the
+    // filter to Active unconditionally, so on a map with nothing active it hid
+    // every quest behind "No quests match these filters".
+    await resetToDefaults();
+    const before = document.querySelectorAll('.quest-row').length;
+    if (!before) throw Error('the rail was already empty before My Raid');
+    $('show-active').click();
+    await wait(900);
+    const after = document.querySelectorAll('.quest-row').length;
+    const status = $('status-filter').value;
+    await resetToDefaults();
+    if (!after)
+      throw Error('My Raid emptied the rail: ' + before + ' rows -> 0, filter now "' + status + '"');
+    return before + ' rows -> ' + after + ', filter "' + status + '"';
+  });
+
+  await check('Focus gives the map the window, it does not take it away', async () => {
+    // Reported as "when I put it fullscreen this happens". It was Focus, at any
+    // size: `.map-focus .map-area { grid-column: 1 }` survived the rail layout
+    // giving `main` a second column, so the map was pinned to the 256px rail
+    // column - 13% of a 1920px window, from the button whose job is the opposite.
+    await resetToDefaults();
+    const map = () => $('map-viewport').getBoundingClientRect().width;
+    const before = map();
+    const main = document.querySelector('main');
+    if (main.classList.contains('map-focus')) {
+      $('focus-map').click();
+      await wait(500);
+    }
+    const unfocused = map();
+    $('focus-map').click();
+    await wait(600);
+    const focused = map();
+    const placement = getComputedStyle($('map-viewport').closest('.map-area')).gridColumn;
+    $('focus-map').click();
+    await wait(500);
+    if (focused < unfocused - 1)
+      throw Error(
+        'Focus made the map narrower: ' + Math.round(unfocused) + 'px -> ' + Math.round(focused) +
+          'px, grid-column "' + placement + '"'
+      );
+    if (focused < innerWidth * 0.9)
+      throw Error('Focus left the map at ' + Math.round((focused / innerWidth) * 100) + '% of the window');
+    return Math.round(unfocused) + 'px -> ' + Math.round(focused) + 'px (' + Math.round((focused / innerWidth) * 100) + '% of the window)';
   });
 
   removeEventListener('error', onError);

@@ -1981,7 +1981,26 @@ dialog,
     width: 26px;
     height: 26px;
   }
-  .location-caption,
+  /* "PLAN YOUR NEXT RAID" is a caption that says nothing, and the rail has no
+     room for it. The line under it does say something - how many quests exist
+     on this map at all, against the filtered count in the journal badge - so
+     it stays, without the "Norvinsk region" half, which is true of all
+     thirteen maps and therefore tells you nothing about any of them. */
+  .location-caption {
+    display: none;
+  }
+  /* `#location-sub` says "74 quests on this map" and stays hidden, which was
+     not this section's doing: `#location-sub{display:none}` has been in the
+     fourth generation the whole time, so the line has been dead in every
+     layout for longer than the rail has existed.
+
+     Showing it was tried and reverted. It costs 15px of the heading, which is
+     one quest row out of eight, and the dashboard's "Where to go next" already
+     gives the same fact per map with objective counts beside it - which is
+     more useful than the number on its own. The list is what the rail is for.
+
+     Note for anyone reviving it: an id hides it, so a rule that does not say
+     `display` leaves it hidden and looks like the text is wrong. */
   #location-sub {
     display: none;
   }
@@ -2156,4 +2175,590 @@ dialog,
   .quest-row .quest-points {
     display: block;
   }
+}
+
+/* ==========================================================================
+   THE DECLUTTERING COULD NOT REACH THE LOOT LAYER
+   --------------------------------------------------------------------------
+   `declutterMarkers()` marks whatever loses its spot with `.crowded`, and
+   `.map-marker.crowded` fades it to 0.22. The loot layer's own rule is
+   `#loot-markers .map-marker { opacity: .78 }` - an id, so (1,1,0), which
+   outranks (0,2,0) and wins no matter which came first.
+
+   So the loot markers were being told to step aside and staying put. Measured
+   on Customs with the Valuables+ preset: 52 markers marked crowded, 35 of them
+   loot, and every one of those 35 still at 0.78. Loot is the most numerous
+   layer and the one the decluttering exists for.
+
+   Fixing it by raising specificity would mean writing a rule per layer and
+   then remembering to write one for the next layer that gets an id-scoped
+   opacity. A custom property does not have that problem: the layer rule reads
+   whatever the element carries, and `.crowded` sets it on the element itself,
+   so no specificity contest ever happens.
+   ========================================================================== */
+#loot-markers .map-marker {
+  opacity: var(--marker-fade, 0.78);
+}
+.map-marker.crowded {
+  --marker-fade: 0.22;
+}
+.map-marker.crowded:hover,
+.map-marker.crowded:focus-visible,
+#loot-markers .map-marker:hover,
+#loot-markers .map-marker:focus-visible {
+  --marker-fade: 1;
+}
+
+/* ==========================================================================
+   THE DIALOGS WERE NEVER SWEPT
+   --------------------------------------------------------------------------
+   The palette sweep that made the chrome greyscale only ever ran with the map
+   on screen, so it measured the map screen and nothing else. Every dialog kept
+   the khaki: warm-white headings, gold icons, an olive selected row in quick
+   find, and - the one that matters - the Shift+F8 price tracker, which is the
+   screen that shortcut lands on.
+
+   Same rule as before. Semantic colour stays: the red-orange on a failed
+   activity row still means failed. Everything decorative goes.
+   ========================================================================== */
+.dialog-header h2,
+#dashboard-title {
+  color: #f2f4f5;
+}
+.dialog-header > button,
+.close-dialog,
+.close-dialog-button {
+  color: #c2c7cb;
+}
+
+/* The item price tracker */
+.item-hotkey {
+  border-color: #3a3e42;
+  background: #1c1f22;
+}
+.item-hotkey > .icon,
+.item-hotkey kbd {
+  color: #d2d6da;
+}
+.item-hotkey kbd {
+  border-color: #44484d;
+}
+.item-hotkey small {
+  color: #9aa0a5;
+}
+.item-empty .icon {
+  color: #7f858a;
+}
+
+/* The dashboard */
+#dashboard-dialog .stat-card strong {
+  color: #eceef0;
+}
+
+/* Quick find */
+.command-search > .icon {
+  color: #b8bdc2;
+}
+.command-search input:focus {
+  outline-color: #6f757b;
+}
+.command-result.selected {
+  border-color: #4a4f54;
+  background: #202326;
+}
+.command-glyph {
+  border-color: #3d4247;
+  background: #1e2124;
+  color: #d2d6da;
+}
+.command-type {
+  border-color: #3a3e42;
+  background: #1c1f22;
+  color: #aeb3b8;
+}
+.command-help {
+  border-top-color: #2a2e32;
+  background: #16181a;
+  color: #9aa0a5;
+}
+
+/* Activity: the icon's ring is chrome, its colour when a quest failed is not */
+.activity-icon {
+  border-color: #454a4f;
+}
+
+/* The last two the dialog sweep found. Both are warm greys rather than
+   anything that means something, which is the only kind left to remove -
+   the red-orange on a failed activity row stays, because it says failed. */
+.command-search input {
+  color: #f2f4f5;
+}
+#connection-dialog .field small {
+  color: #9aa0a5;
+}
+
+/* "Valuables+" and "Battle Pass documents" are the two featured rows in the
+   loot drawer, and they were still khaki on a warm near-black: their rule uses
+   `!important`, so the earlier correction lost silently. They are a heading,
+   not a state - what they mark is already said by the checkbox beside them. */
+.loot-layer-options label.loot-featured,
+.loot-layer-options .loot-featured {
+  color: #e2e5e8 !important;
+  background: #202326;
+}
+
+/* The rail was 244px wide with the brief open and 232 with it closed, so it
+   jumped every time you toggled the brief and the quest names reflowed.
+
+   `main { grid-template-columns: ... }` is a type selector, (0,0,1), and the
+   two state rules that also set it - `.details-collapsed` and `.map-focus` -
+   are classes, (0,1,0). They won, and their template is the older
+   `var(--sidebar-width)` with no room for the gap the rail is pushed into.
+   A rail is furniture; it does not change size because a card opened. */
+@media (min-width: 1101px) {
+  .details-collapsed,
+  .map-focus,
+  .map-focus.details-collapsed {
+    grid-template-columns: calc(var(--sidebar-width) + var(--rail-gap)) minmax(0, 1fr);
+  }
+}
+
+/* The accent that means "this is happening now" was not reaching the active
+   quest, which is the example the rule is written around.
+   `.quest-row .quest-status.active` is (0,3,0) and still said `var(--gold)`,
+   which the monochrome pass turned into the brightest neutral - so the dot that
+   marks the quest you are on looked like every other bright thing on screen.
+   The glow stays off: that rule switched it off deliberately, and a halo on a
+   5px dot inside a 52px row was too much. Only the colour was wrong. */
+.quest-row .quest-status.active {
+  background: var(--live);
+}
+
+/* ==========================================================================
+   TEXT HAS SIX WEIGHTS, NOT FORTY-SIX
+   --------------------------------------------------------------------------
+   Counted on one screen - the rail, the brief, the map chrome - 122 pieces of
+   text were painted in 46 different colours. Not 46 levels of emphasis: 46
+   near-misses. Six different whites between luminance 237 and 244, so the words
+   "Broadcast - Part 5" appeared at three of them at once, in the brief title,
+   in the rail row and on the map. Eight more between 180 and 199. Nobody can
+   see a difference of two luminance units; what they see is that nothing is
+   deliberate.
+
+   This is the same problem the design-scale section found in corner radii and
+   paddings, and it takes the same answer: a scale, applied at the end, that
+   restyles nothing and only says which of six weights each thing is.
+
+     --ink-1  what you are reading now
+     --ink-2  the body of a panel
+     --ink-3  labels and counts beside it
+     --ink-4  supporting lines under a heading
+     --ink-5  eyebrows, captions, the trader under a quest name
+     --ink-6  fine print
+
+   Semantic colour is untouched: the red on a failed row, the green on a
+   completed one, `--live` on the quest you are in. Dark-on-light text inside
+   the primary buttons is untouched too - it is not on this scale.
+
+   A leftover the warm sweep missed is fixed here as a side effect. Two of those
+   whites were warm - rgb(242,239,230) and rgb(238,238,230) - but only by eight
+   and twelve points of red over blue, under the saturation the sweep required,
+   so they read as khaki and were never reported.
+   ========================================================================== */
+:root {
+  --ink-1: #f2f4f5;
+  --ink-2: #dfe3e6;
+  --ink-3: #bcc1c5;
+  --ink-4: #a4a9ae;
+  --ink-5: #8a8f94;
+  --ink-6: #6f7479;
+}
+
+/* 1 — what you are reading */
+.detail-head h2,
+#focus-label,
+.quest-row strong,
+.dialog-header h2,
+#dashboard-title,
+#location {
+  color: var(--ink-1);
+}
+
+/* 2 — the body of a panel */
+.objective p,
+.connection-head strong,
+.map-shortcuts kbd,
+.quest-filter-panel > summary > span,
+.objective button,
+.reward,
+.favorite-button,
+.loot-layer-options label,
+.layers label {
+  color: var(--ink-2);
+}
+
+/* 3 — labels and counts beside it */
+.count,
+.pill,
+.layer-presets button,
+.section-title,
+.name-symbol,
+.progress-control span,
+.bp-layer-option b,
+.chip {
+  color: var(--ink-3);
+}
+
+/* 4 — supporting lines under a heading */
+.objective small,
+.loot-intel strong,
+.loot-intel .eyebrow,
+.detail-head .eyebrow,
+#bp-floor-hint,
+#progress-label {
+  color: var(--ink-4);
+}
+
+/* 5 — eyebrows and captions. Greyscale like the rest: the blue these carried
+   predates the decision that the chrome has no colour, and it was never listed
+   among the exceptions that keep theirs. */
+.eyebrow,
+.map-heading .eyebrow,
+.map-toolbar .eyebrow,
+.quest-row .quest-trader,
+.connection-head small,
+.layer-data-note,
+.detail-note,
+.bp-layer-content p,
+.search kbd {
+  color: var(--ink-5);
+}
+
+/* 6 — fine print */
+.quest-row .quest-points,
+.map-shortcuts > span,
+.map-footer,
+#quest-sync {
+  color: var(--ink-6);
+}
+
+/* The stragglers the first pass left: controls and headings each carrying a
+   colour of their own. "Updated from logs" was still green - the last of the
+   accent that used to be a chip on every row, and the only thing on the screen
+   pretending a routine fact is good news. */
+.toolbar-actions .map-tool,
+.connection-actions button,
+.quest-chain a,
+.quest-chain button,
+.raid-kit-row,
+.raid-kit-note {
+  color: var(--ink-3);
+}
+.quest-heading .eyebrow,
+.summary-title .eyebrow,
+.section-title .eyebrow,
+.quest-row .log-source,
+.log-source,
+#bp-floor-hint,
+.layer-data-note {
+  color: var(--ink-5);
+}
+#active-map-label {
+  color: var(--ink-1);
+}
+.name-symbol {
+  color: var(--ink-3);
+}
+
+/* The last colour in the chrome that was not semantic: "Updated from logs" in
+   the quest brief's meta row, still the green it wore when it was a chip on
+   every quest row. Its rule uses `!important`, so the correction has to as
+   well - the same convention as the featured loot rows above. Where a quest's
+   status came from is a fact about the record, not good news. */
+.detail-meta .log-source,
+.log-source {
+  color: var(--ink-5) !important;
+}
+
+/* ============================================================================
+   A FAILURE IS NOT AN ANNOUNCEMENT, AND A LEGEND HAS TO MATCH THE MAP
+
+   Three things a cascade sweep found. It ranks every rule that declares a
+   colour by specificity and order, works out which one actually WINS on each
+   element across fourteen states, and then asks which of the winners are not
+   neutral. 158 came back; most sit at 8-13 points of saturation, which is the
+   cool grey the palette is made of (`--ink-1` is #f2f4f5 - bluer than it is
+   red). The warm ones are the leftovers, because nothing in this design is
+   warm except `--live`.
+   ============================================================================ */
+
+/* 1. THE TOAST WAS THE SECOND AMBER, AND IT SAID EVERYTHING IN ONE VOICE.
+
+   #e9bf7b at 110 points of saturation - not `--live` (#e9b969) but close
+   enough to read as it, which is the worse of the two failures: it both
+   dilutes the one colour that means "now" and misses it. And the same slab
+   carried "Marker added." and "Could not save progress. Check available disk
+   space." A confirmation and a data-loss warning are not the same sentence and
+   must not look alike. `toast()` takes a tone now; the fifteen failure sites
+   pass it. */
+#toast {
+  background: #12161acc;
+  color: var(--ink-1);
+  border: 1px solid #ffffff1f;
+  border-radius: var(--r-md);
+  backdrop-filter: blur(18px) saturate(1.05);
+  box-shadow: 0 18px 44px #0009;
+}
+#toast.toast-error {
+  background: #1d1315e0;
+  border-color: #e5978955;
+  /* a bar rather than a border, so nothing shifts when the tone changes */
+  box-shadow:
+    inset 3px 0 0 var(--danger),
+    0 18px 44px #0009;
+}
+
+/* 2. THE LEGEND DID NOT MATCH THE MAP, WHICH IS ITS ENTIRE JOB.
+
+   Layer icons keep their colour - that is the documented exception - but only
+   because each one "matches that layer's markers on the map". Measured, none
+   of them did. The same two concepts carried three sets of values:
+
+     | concept            | marker  | label   | legend  |
+     | extract, PMC       | #97d5af | #b7ddc7 | #97c6a8 |
+     | extract scav, transit | #8abdd0 | #9bc8dc | #83b6d1 |
+
+   The label being lighter is deliberate - text on artwork needs more lift than
+   a stroke does - but the legend is a swatch, so it has to be the stroke
+   exactly. Scav extracts and transits sharing one colour is also deliberate:
+   the map separates them by glyph, the arrow and the double arrow, and the
+   legend uses the same two glyphs.
+
+   A check in tools/renderer-smoke.js now compares the swatch against the
+   marker, because whichever side drifts next, the sweep above will not be
+   running. */
+.layers .icon.green {
+  color: #97d5af;
+}
+.layers .icon.blue {
+  color: #8abdd0;
+}
+
+/* 3. THE WARM LEFTOVERS THAT STILL WON.
+
+   The earlier warm sweep required `r - b >= 12`. #d4dcca on the position
+   readout and #bec4b4 in the connection dialog are both r - b = 10 - under
+   the bar, and a threshold always has a blind spot immediately below it. This
+   list is everything warm that survived, found by asking for saturation
+   instead of hue. */
+.position-bar strong {
+  color: var(--ink-1);
+}
+.position-bar {
+  border-color: #ffffff1a;
+}
+.detail-head {
+  border-bottom-color: #ffffff14;
+}
+#connection-dialog .dialog-intro,
+.dialog-header p,
+.command-copy small {
+  color: var(--ink-4);
+}
+#connection-dialog .log-diagnostic,
+#connection-dialog .dialog-actions,
+.dialog-header > button,
+.integrity-card,
+.quest-note,
+.progress-control select {
+  border-color: #ffffff1f;
+}
+.integrity-card {
+  color: var(--ink-3);
+}
+.objective-meter {
+  background: #ffffff14;
+}
+.nav.active {
+  background: #ffffff14;
+}
+
+/* The last of it, all in the chrome that floats on the map - the zoom column,
+   the floor picker, the marker button, the two footers. They are the same
+   field-journal khaki as everything above, just quiet enough (10-17 points) to
+   have survived two passes. `--live` on the My Raid count stays: that is the
+   raid you are in, which is exactly what it is for. */
+.zoom-controls {
+  border-color: #ffffff1f;
+}
+.zoom-controls button {
+  color: var(--ink-2);
+  border-bottom-color: #ffffff14;
+}
+.map-footer {
+  border-top-color: #ffffff12;
+}
+.toolbar-actions button,
+.toolbar-actions .map-tool,
+.floor-select,
+#add-marker {
+  color: var(--ink-2);
+}
+.floor-select select {
+  color: var(--ink-1);
+}
+.sidebar-footer {
+  color: var(--ink-4);
+}
+#dashboard-dialog .stat-card,
+#dashboard-dialog .dashboard-panel,
+.command-search {
+  border-color: #ffffff1f;
+}
+
+/* ============================================================================
+   THE CONNECTION CARD MOVED TO SPACE THAT WAS ALREADY EMPTY
+
+   The quest rail is 805px tall and the quest list had 371px of it - 46%, seven
+   rows. The largest single thing taking the rest was the connection card at
+   98px: a status line you read when something breaks, and three buttons you
+   press after a raid. Two quest rows, permanently, for that.
+
+   Measured, the topbar had **429px of empty band** between the search button
+   and the profile picker, at every window size the rail layout covers. So
+   nothing had to be dropped or folded away - the card moved into space that
+   was already being wasted, and the rail got the 98px back.
+
+   It fixes a truncation on the way. `#connection-sub` had 156px in the rail
+   and needs 170px for "Connect your screenshots folder" and 159px for
+   "1204 files · logs read 12 Sep" - the previous fix here only ever measured
+   the version with a clock time in it. In the topbar it has room to say the
+   whole thing.
+   ============================================================================ */
+.topbar .connection-card {
+  /* An earlier generation sets `flex-direction: column` on this card. Setting
+     `display: flex` again does not reset it - a property you do not declare is
+     not a property you have overridden - so the row stacked and grew a topbar
+     four pixels too tall. Declare the direction. */
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 14px;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.topbar .connection-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.topbar .connection-head > div {
+  min-width: 0;
+}
+.topbar #connection-title {
+  display: block;
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--ink-2);
+}
+.topbar #connection-sub {
+  display: block;
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--ink-5);
+}
+.topbar .connection-actions {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.topbar .connection-actions button {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 10px;
+  gap: 6px;
+  border-radius: var(--r-sm);
+}
+
+/* The chevron opened the connection dialog, and so does the gear in `.top-end`.
+   In the rail they were 600px apart; in the topbar they would be neighbours,
+   two controls for one action. The gear is the labelled one, so it keeps it. */
+.topbar #connect-shortcut {
+  display: none;
+}
+
+/* A 1464px window has room for all of it. Narrower ones give up the labels
+   first (the icons and their titles carry the meaning, the way the map tools
+   already do), then the freshness line, before anything wraps. */
+@media (max-width: 1379px) {
+  .topbar .connection-actions button span:not([id]) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .topbar .connection-actions button {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+@media (max-width: 1199px) {
+  .topbar #connection-sub {
+    display: none;
+  }
+}
+@media (max-width: 1000px) {
+  .topbar .connection-head > div {
+    display: none;
+  }
+}
+
+/* ============================================================================
+   FOCUS MADE THE MAP EIGHT TIMES SMALLER
+
+   Reported as "when I put it fullscreen this happens". It is not fullscreen -
+   it is the Focus button, at every window size, and it has been there since
+   the rail layout shipped.
+
+   The third-generation rule reads:
+
+     .map-focus, .map-focus.details-collapsed { grid-template-columns: minmax(0,1fr) }
+     .map-focus .sidebar, .map-focus .details { display: none }
+     .map-focus .map-area { grid-column: 1 }
+
+   which was right when focus mode collapsed `main` to a single column. The
+   rail work then gave `.map-focus` a new two-column template - the handoff
+   even says "any new template for `main` has to be given to those two as
+   well", and it was - but `grid-column: 1` was left behind, and column one is
+   now the 256px rail column. `.map-focus .map-area` is (0,2,0) and the
+   full-bleed `.map-area { grid-column: 1 / -1 }` is (0,1,0), so the old rule
+   won wherever it was in the file.
+
+   Measured in the running application at 1920x1009:
+
+     | Focus | grid-column | map viewport | share of the window |
+     | off   | 1 / -1      | 1920px       | 100%                |
+     | on    | 1           | 256px        | 13%                 |
+
+   The button whose entire job is to give the map the window was taking 87% of
+   it away. A check in tools/renderer-smoke.js now asserts the direction:
+   focus may not make the map narrower than it already was.
+   ============================================================================ */
+.map-focus .map-area,
+.map-focus.details-collapsed .map-area {
+  grid-column: 1 / -1;
 }
