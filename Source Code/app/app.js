@@ -497,6 +497,7 @@ function renderList() {
     );
   matching.forEach((q, i) => {
     const row = el('button', 'quest-row' + (q.id === selected?.id ? ' selected' : ''));
+    row.dataset.questId = q.id;
     row.setAttribute('aria-label', q.name);
     row.setAttribute('aria-pressed', String(q.id === selected?.id));
     const body = el('div', 'quest-copy');
@@ -606,7 +607,13 @@ function alignBrief() {
          aligning the card's top instead leaves the objectives most of a
          screen below the row you clicked, which is the whole thing this
          layout exists to fix. */
-      const target = brief.querySelector('.objective') || brief.querySelector('.detail-section');
+      /* A quest brief leads with its objectives, so that is what should land
+         level with the row. My Raid has none - it leads with its summary, at
+         the very top of the card - and reaching for the first `.detail-section`
+         instead aimed at BRING TO RAID, several hundred pixels down, which
+         clamped the card to the top of the window and left the notch pointing
+         a long way back up at the button. No objectives means no lead. */
+      const target = brief.querySelector('.objective');
       const lead = target
         ? target.getBoundingClientRect().top - brief.getBoundingClientRect().top + brief.scrollTop
         : 0;
@@ -655,11 +662,31 @@ function focusMapPosition(position, label) {
   $('focus-label').textContent = label;
   toast('Showing ' + label + '.');
 }
+/* Choosing a quest moves a class between two rows. It used to rebuild the whole
+ * list to do it, which is fine for the eleven rows an average map filter shows
+ * and is not fine at all for the 503 rows "All quests" shows - 16.8ms, on every
+ * arrow key. Nothing renderList() reads changes when the selection does:
+ * the search text, the map, the trader, the status and the path filter are all
+ * exactly as they were.
+ */
+let listRenderTimer = 0;
+function scheduleListRender() {
+  clearTimeout(listRenderTimer);
+  listRenderTimer = setTimeout(renderList, 110);
+}
+function markSelectedRow() {
+  for (const row of $('quest-list').querySelectorAll('.quest-row')) {
+    const chosen = row.dataset.questId === selected?.id;
+    row.classList.toggle('selected', chosen);
+    row.setAttribute('aria-pressed', String(chosen));
+  }
+  scheduleBriefAlign();
+}
 function selectQuest(q) {
   myRaidOpen = false;
   selected = q;
   setDetailsCollapsed(false);
-  renderList();
+  markSelectedRow();
   renderDetail();
   renderMarkers();
   $('focus-label').textContent = q.name;
@@ -999,6 +1026,44 @@ function renderBattlepass() {
     scale: markerScale()
   });
 }
+/* Panning only slides the viewBox, and every marker layer is drawn in map
+ * coordinates, so the SVG carries them along for nothing. Sizes come from
+ * `view.w` and clustering cells from the same, neither of which a pan changes,
+ * and the decluttering is decided from distances between markers, which a
+ * translation leaves identical.
+ *
+ * The one layer that genuinely depends on where you are is the loot one,
+ * because it culls to the viewport - and that already runs on a debounce.
+ *
+ * So a drag needs the viewBox and nothing else. `setView()` stays the full
+ * rebuild for everything that is not a pan: zooming, switching floors,
+ * toggling a layer, selecting a quest.
+ */
+function panView() {
+  $('map-svg').setAttribute('viewBox', [view.x, view.y, view.w, view.h].join(' '));
+  scheduleLootRender();
+}
+/* Zooming does change what a rebuild would produce - marker sizes and the
+ * clustering cells both come from `view.w` - so it cannot be skipped. It can
+ * be deferred until you stop.
+ *
+ * Settling once per animation frame was already far better than once per wheel
+ * event, but the rebuild is 24ms on a busy map and the frame is 16, so a
+ * sustained zoom still dropped frames. Settling after the gesture instead
+ * costs nothing per frame: the viewBox moves immediately and the SVG scales
+ * the markers along with the map, then they resettle to their proper sizes and
+ * clusters once the wheel goes quiet.
+ *
+ * The visible cost is that markers grow and shrink with the map while you are
+ * zooming, which on a map reads as the map zooming rather than as a bug, and
+ * clusters do not split until you stop.
+ */
+let zoomSettleTimer = 0;
+function zoomView() {
+  panView();
+  clearTimeout(zoomSettleTimer);
+  zoomSettleTimer = setTimeout(setView, 90);
+}
 function setView() {
   $('map-svg').setAttribute('viewBox', [view.x, view.y, view.w, view.h].join(' '));
   renderMarkers();
@@ -1306,11 +1371,30 @@ const looseLayers = [
   ['task', 'layer-loose-task', 'loose-task-count'],
   ['other', 'layer-loose-other', 'loose-other-count']
 ];
+/* The loot layer is the expensive half of a rebuild - 10.3ms of 23.6 on
+ * Streets with everything switched on - and almost none of that work changes
+ * between rebuilds. `lootEntries()` walked every container and every loose
+ * pile, allocating an object each, and `renderLoot()` then projected each
+ * position and worked out its floor, on every zoom settle and every layer
+ * toggle.
+ *
+ * What it depends on is the map's loot document and which layer boxes are
+ * ticked. Neither the projection nor the floor depends on where you are
+ * looking or which floor you are on, so both are worked out once and kept.
+ * The view still decides what is culled and how things cluster, which is the
+ * part that genuinely has to be redone.
+ */
+let lootCache = null;
+
 function lootEntries() {
   if (!lootData) return [];
-  const entries = [],
-    containers = new Set(containerLayers.filter(([, id]) => $(id)?.checked).map(([key]) => key)),
-    loose = new Set(looseLayers.filter(([, id]) => $(id)?.checked).map(([key]) => key));
+  const containers = new Set(
+      containerLayers.filter(([, id]) => $(id)?.checked).map(([key]) => key)
+    ),
+    loose = new Set(looseLayers.filter(([, id]) => $(id)?.checked).map(([key]) => key)),
+    key = currentMapId + '|' + [...containers].sort().join(',') + '|' + [...loose].sort().join(',');
+  if (lootCache && lootCache.key === key && lootCache.source === lootData) return lootCache.entries;
+  const entries = [];
   for (const [x, y, z, type] of lootData.containers || []) {
     const category = lootData.containerTypes?.[type]?.category || 'caches';
     if (containers.has(category))
@@ -1332,6 +1416,15 @@ function lootEntries() {
           lootData.items?.[matching[0]]?.categoryKey ||
           'other'
       });
+  }
+  /* Only worth keeping once the map is loaded enough to project against -
+     caching a projection made without a definition would outlive the mistake. */
+  if (mapDefinition) {
+    for (const entry of entries) {
+      entry.projected = point(entry.position);
+      entry.itemFloor = floorFor(entry.position);
+    }
+    lootCache = { key, source: lootData, entries };
   }
   return entries;
 }
@@ -1455,8 +1548,8 @@ function renderLoot() {
     padding = 34 * scale,
     groups = new Map();
   for (const entry of entries) {
-    if (floorFor(entry.position) !== floor) continue;
-    const projected = point(entry.position);
+    if ((entry.itemFloor ?? floorFor(entry.position)) !== floor) continue;
+    const projected = entry.projected || point(entry.position);
     if (
       projected.x < view.x - padding ||
       projected.x > view.x + view.w + padding ||
@@ -2959,9 +3052,37 @@ function updateCompass() {
   const rotation = mapDefinition?.coordinateRotation || 0;
   $('north-arrow').style.transform = `rotate(${-rotation}deg)`;
 }
+/* Where the middle of the map actually is, as a fraction of the viewport.
+ *
+ * The rail and, when it is open, the quest brief lie over the left of the
+ * map, so the geometric centre of the viewport is underneath them. Framing a
+ * quest objective there put the one thing you asked to see behind the glass.
+ * This returns the centre of the strip you can see, which is 0.5 again as soon
+ * as nothing is covering anything - the narrow layouts included.
+ */
+function visibleCentreFraction() {
+  const viewport = $('map-viewport');
+  if (!viewport) return 0.5;
+  const frame = viewport.getBoundingClientRect();
+  if (!frame.width) return 0.5;
+  let covered = frame.left;
+  for (const selector of ['.sidebar', '#details']) {
+    const panel = document.querySelector(selector);
+    if (!panel) continue;
+    const style = getComputedStyle(panel);
+    if (style.display === 'none' || style.visibility === 'hidden' || +style.opacity === 0) continue;
+    const box = panel.getBoundingClientRect();
+    // only panels lying over the map's left edge, not ones beside it
+    if (box.left <= covered + 24 && box.right > covered) covered = box.right;
+  }
+  const middle = (covered + frame.right) / 2;
+  const fraction = (middle - frame.left) / frame.width;
+  return Math.min(Math.max(fraction, 0.5), 0.85);
+}
 function centeredView(p, w = view.w, h = view.h) {
+  const fx = visibleCentreFraction();
   return {
-    x: w >= W ? (W - w) / 2 : Math.max(0, Math.min(W - w, p.x - w / 2)),
+    x: w >= W ? (W - w) / 2 : Math.max(0, Math.min(W - w, p.x - w * fx)),
     y: h >= H ? (H - h) / 2 : Math.max(0, Math.min(H - h, p.y - h / 2)),
     w,
     h
@@ -4069,10 +4190,18 @@ function initMapEvents() {
     const p = position(e);
     view.x += drag.p.x - p.x;
     view.y += drag.p.y - p.y;
-    setView();
+    panView();
   };
-  viewport.onpointerup = () => (drag = null);
-  viewport.onpointercancel = () => (drag = null);
+  viewport.onpointerup = () => {
+    /* One full rebuild when the drag ends, so anything that culls or clusters
+       settles against where the map actually is now. */
+    if (drag) setView();
+    drag = null;
+  };
+  viewport.onpointercancel = () => {
+    if (drag) setView();
+    drag = null;
+  };
   function zoom(factor, p = { x: view.x + view.w / 2, y: view.y + view.h / 2 }) {
     const next = Math.max(60, Math.min(W * 2, view.w * factor)),
       ratio = next / view.w;
@@ -4082,7 +4211,7 @@ function initMapEvents() {
       w: next,
       h: view.h * ratio
     };
-    setView();
+    zoomView();
   }
   viewport.addEventListener(
     'wheel',
@@ -4581,8 +4710,12 @@ async function start() {
   document
     .querySelectorAll('[data-layer-preset]')
     .forEach(button => (button.onclick = () => applyLayerPreset(button.dataset.layerPreset)));
-  for (const id of ['quest-search', 'map-filter', 'trader', 'status-filter'])
-    $(id).addEventListener(id === 'quest-search' ? 'input' : 'change', renderList);
+  /* Typing fires once per character and rebuilding the list is the expensive
+     part - 21ms with every quest shown - so the search waits for a pause while
+     the four selects, which change once per use, still redraw immediately. */
+  $('quest-search').addEventListener('input', scheduleListRender);
+  for (const id of ['map-filter', 'trader', 'status-filter'])
+    $(id).addEventListener('change', renderList);
   $('path-filter').addEventListener('change', applyQuestPathFilter);
   for (const id of ['layer-extract', 'layer-scav'])
     $(id).onchange = () => {
@@ -5058,6 +5191,28 @@ async function start() {
       openCommandPalette();
       return;
     }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !typing && !dialogOpen) {
+      /* The rail shows eight quests at a time and selecting one is now the
+         main thing you do on this screen, so it is worth a key. Nothing else
+         binds the arrows outside the command palette, and that counts as
+         typing. */
+      const rows = [...$('quest-list').querySelectorAll('.quest-row')];
+      if (!rows.length) return;
+      e.preventDefault();
+      const at = rows.findIndex(row => row.classList.contains('selected'));
+      const next =
+        e.key === 'ArrowDown'
+          ? Math.min(rows.length - 1, at + 1)
+          : Math.max(0, (at === -1 ? rows.length : at) - 1);
+      rows[next].click();
+      /* Selecting re-renders the list, so the row that was clicked is gone by
+         the time it needs scrolling into view. */
+      requestAnimationFrame(() => {
+        const now = $('quest-list').querySelector('.quest-row.selected');
+        if (now) now.scrollIntoView({ block: 'nearest' });
+      });
+      return;
+    }
     if (e.key === '/' && !typing && !dialogOpen) {
       e.preventDefault();
       $('quest-search').focus();
@@ -5069,8 +5224,18 @@ async function start() {
       return;
     }
     if (e.key === 'Escape' && !dialogOpen) {
-      if (mapFocus) setMapFocus(false);
-      else $('map-popup').hidden = true;
+      /* A ladder, most transient first, one rung per press. Escape used to
+         leave map focus before closing a popup, so a popup opened while
+         focused took two presses and threw away the focus to get rid of one
+         card. The brief joined the ladder when it became a floating card:
+         before that it was a column you toggled, and a column you are not
+         looking at costs nothing, but a card lying over the map does. */
+      const drawer = document.querySelector('.layer-disclosure[open]');
+      const popup = $('map-popup');
+      if (!popup.hidden) popup.hidden = true;
+      else if (drawer) drawer.open = false;
+      else if (railLayout.matches && !detailsCollapsed) setDetailsCollapsed(true);
+      else if (mapFocus) setMapFocus(false);
     }
   });
   if (boot.storageError) toast(boot.storageError);

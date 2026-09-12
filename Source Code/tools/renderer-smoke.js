@@ -42,10 +42,14 @@
     loc.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
   }
-  const search = value => {
+  /* The quest search waits for a pause in typing before it redraws the list,
+     so a test that types and then grabs the first row grabs the row that was
+     there before. Await this rather than calling it bare. */
+  const search = async value => {
     const s = $('quest-search');
     s.value = value;
     s.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(220);
   };
   async function pickQuest(name) {
     $('map-filter').value = '';
@@ -53,7 +57,7 @@
     $('status-filter').value = 'all';
     $('status-filter').dispatchEvent(new Event('change', { bubbles: true }));
     await wait(400);
-    search(name);
+    await search(name);
     for (let i = 0; i < 30; i++) {
       const card = document.querySelector('#quest-list button, #quest-list .quest-card');
       if (card) {
@@ -115,7 +119,7 @@
 
   await check('My Raid lists its quests and the keys they need', async () => {
     await openMap('customs');
-    search('');
+    await search('');
     await wait(400);
     $('show-active').click();
     await wait(800);
@@ -161,6 +165,90 @@
     const count = $('battlepass-markers').childElementCount;
     if (!count) throw Error('layer on but nothing drawn');
     return count + ' markers';
+  });
+
+  /* The rail layout, added 12 September 2026. These four are the parts of it
+     that are easy to break from a distance: the card is positioned by script
+     rather than by the grid, and nothing else in this file would notice if it
+     stopped being positioned at all. Each one is a no-op below 1101px, where
+     the brief is still a panel. */
+  const wideLayout = matchMedia('(min-width: 1101px)').matches;
+
+  await check('the brief is a card beside the rail, not a column', async () => {
+    if (!wideLayout) return 'narrow layout, brief is a panel';
+    const list = $('quest-list').querySelectorAll('.quest-row');
+    if (!list.length) throw Error('no quests to open');
+    list[0].click();
+    await wait(900);
+    const rail = document.querySelector('.sidebar').getBoundingClientRect();
+    const card = $('details').getBoundingClientRect();
+    if (card.left < rail.right) throw Error('brief overlaps the rail');
+    if (card.left > rail.right + 40) throw Error('brief is ' + Math.round(card.left - rail.right) + 'px from the rail');
+    if (card.right > innerWidth) throw Error('brief runs off the window at ' + Math.round(card.right));
+    return Math.round(card.width) + 'px wide, ' + Math.round(card.left - rail.right) + 'px from the rail';
+  });
+
+  await check('the brief follows the row you pick', async () => {
+    if (!wideLayout) return 'narrow layout, brief does not move';
+    const rows = [...$('quest-list').querySelectorAll('.quest-row')];
+    if (rows.length < 4) return 'too few quests to tell';
+    rows[0].click();
+    await wait(800);
+    const high = $('details').getBoundingClientRect().top;
+    rows[Math.min(rows.length - 1, 5)].click();
+    await wait(800);
+    const low = $('details').getBoundingClientRect().top;
+    if (low <= high) throw Error('picking a lower row did not move the card down');
+    return Math.round(high) + 'px then ' + Math.round(low) + 'px';
+  });
+
+  await check('nothing on the map hides under a panel', async () => {
+    const panels = ['.sidebar', '#details'].map(s => document.querySelector(s)).filter(Boolean);
+    const floats = ['#focus-label', '.toolbar-actions', '.position-bar', '.zoom-controls', '.north'];
+    const live = el => {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return null;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 ? r : null;
+    };
+    const buried = [];
+    for (const p of panels) {
+      const pb = live(p);
+      if (!pb) continue;
+      for (const s of floats) {
+        for (const el of document.querySelectorAll(s)) {
+          const fb = live(el);
+          if (!fb) continue;
+          const w = Math.min(pb.right, fb.right) - Math.max(pb.left, fb.left);
+          const h = Math.min(pb.bottom, fb.bottom) - Math.max(pb.top, fb.top);
+          if (w > 1 && h > 1) buried.push(s);
+        }
+      }
+    }
+    if (buried.length) throw Error('under a panel: ' + [...new Set(buried)].join(', '));
+    return 'all clear';
+  });
+
+  await check('Escape takes one thing off the screen at a time', async () => {
+    const esc = async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await wait(320);
+    };
+    const showing = () =>
+      (!$('map-popup').hidden ? 1 : 0) +
+      (document.querySelector('.layer-disclosure[open]') ? 1 : 0) +
+      (!document.querySelector('main').classList.contains('details-collapsed') ? 1 : 0);
+    document.querySelector('.layer-disclosure').open = true;
+    await wait(400);
+    const steps = [showing()];
+    for (let i = 0; i < 3; i++) {
+      await esc();
+      steps.push(showing());
+    }
+    for (let i = 1; i < steps.length; i++)
+      if (steps[i] > steps[i - 1]) throw Error('a press added something: ' + steps.join(' > '));
+    if (steps[steps.length - 1] !== 0) throw Error('something survived four presses: ' + steps.join(' > '));
+    return steps.join(' > ');
   });
 
   removeEventListener('error', onError);
