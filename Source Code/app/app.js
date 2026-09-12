@@ -505,7 +505,7 @@ function renderList() {
     body.append(
       el(
         'small',
-        '',
+        'quest-where',
         q.traderName +
           ' · ' +
           questMaps(q) +
@@ -519,7 +519,13 @@ function renderList() {
             : '')
       )
     );
+    body.append(el('small', 'quest-trader', q.traderName));
     if (source(q) === 'logs') body.append(el('small', 'log-source', 'Updated from logs'));
+    const points = el('span', 'quest-points', markerCount ? String(markerCount) : '');
+    points.title = markerCount
+      ? markerCount + ' point' + (markerCount === 1 ? '' : 's') + ' on ' + mapName(currentMapId)
+      : 'No point on this map';
+    points.setAttribute('aria-hidden', 'true');
     const badge = traderBadge(q);
     const statusDot = el('span', 'quest-status ' + status(q));
     statusDot.title = status(q);
@@ -527,11 +533,12 @@ function renderList() {
     const arrow = uiIcon('chevron');
     arrow.classList.add('quest-arrow');
     row.title = q.name + ' — ' + q.traderName + ' · ' + questMaps(q) + ' · ' + status(q);
-    row.append(badge, body, statusDot, arrow);
+    row.append(badge, body, points, statusDot, arrow);
     row.onclick = () => selectQuest(q);
     $('quest-list').append(row);
   });
   $('quest-count').textContent = matching.length;
+  scheduleBriefAlign();
   const filterSummary = $('filter-summary');
   if (filterSummary) {
     const parts = [];
@@ -555,6 +562,70 @@ function renderList() {
       ? 'Last quest event: ' + new Date(sync.lastEventAt).toLocaleString()
       : 'Progress is saved on this PC.';
 }
+/* On a wide window the quest brief is a card beside the rail rather than a
+ * column across the map, so something has to tell it where to sit: level with
+ * the row you clicked. That is the whole point of the layout - the objectives
+ * land under your eyes instead of on the far side of the window.
+ *
+ * Everything here is a no-op below 1101px, where the brief is still a panel
+ * and the stylesheet says so. The media query is the single source of truth
+ * for which layout is in play; do not add a second one.
+ */
+const railLayout = matchMedia('(min-width: 1101px)');
+let briefAlignFrame = 0;
+
+function alignBrief() {
+  briefAlignFrame = 0;
+  const main = document.querySelector('main');
+  const brief = $('details');
+  if (!main || !brief) return;
+  const off = !railLayout.matches || detailsCollapsed || mapFocus;
+  if (off) {
+    main.style.removeProperty('--brief-top');
+    main.style.removeProperty('--notch-y');
+    main.classList.remove('brief-tied');
+    return;
+  }
+  const stage = main.getBoundingClientRect();
+  const inset = 12;
+  const height = brief.offsetHeight;
+  const lowest = Math.max(inset, stage.height - inset - height);
+  const row =
+    $('quest-list').querySelector('.quest-row.selected') || (myRaidOpen ? $('show-active') : null);
+  let top = inset;
+  let tied = false;
+  if (row) {
+    const box = row.getBoundingClientRect();
+    /* A row scrolled out of the list has no position worth pointing at, so the
+       card stays where it is and the notch goes away rather than aiming at
+       something off screen. */
+    if (box.bottom > stage.top + 4 && box.top < stage.bottom - 4) {
+      /* What should land level with the row is the first objective, not the
+         top of the card. Above it sit the picture, the trader, the title, the
+         map chips and BRING TO RAID - around 540px on a typical quest - and
+         aligning the card's top instead leaves the objectives most of a
+         screen below the row you clicked, which is the whole thing this
+         layout exists to fix. */
+      const target = brief.querySelector('.objective') || brief.querySelector('.detail-section');
+      const lead = target
+        ? target.getBoundingClientRect().top - brief.getBoundingClientRect().top + brief.scrollTop
+        : 0;
+      top = Math.min(Math.max(box.top - stage.top - lead, inset), lowest);
+      tied = true;
+      const notch = Math.round(box.top - stage.top + box.height / 2 - top);
+      main.style.setProperty('--notch-y', Math.min(Math.max(notch, 12), height - 12) + 'px');
+      if (notch < 8 || notch > height - 8) tied = false;
+    }
+  }
+  main.style.setProperty('--brief-top', Math.round(top) + 'px');
+  main.classList.toggle('brief-tied', tied);
+}
+
+function scheduleBriefAlign() {
+  if (briefAlignFrame) return;
+  briefAlignFrame = requestAnimationFrame(alignBrief);
+}
+
 function setDetailsCollapsed(collapsed) {
   detailsCollapsed = !!collapsed;
   const main = document.querySelector('main');
@@ -562,11 +633,13 @@ function setDetailsCollapsed(collapsed) {
   $('toggle-details').classList.toggle('active', !detailsCollapsed);
   $('toggle-details').setAttribute('aria-expanded', String(!detailsCollapsed));
   $('toggle-details').title = detailsCollapsed ? 'Show quest details' : 'Hide quest details';
+  scheduleBriefAlign();
   requestAnimationFrame(() => setView());
 }
 function setMapFocus(active) {
   mapFocus = !!active;
   document.querySelector('main').classList.toggle('map-focus', mapFocus);
+  scheduleBriefAlign();
   $('focus-map').classList.toggle('active', mapFocus);
   $('focus-map').setAttribute('aria-pressed', String(mapFocus));
   $('focus-map').querySelector('span').textContent = mapFocus ? 'Exit' : 'Focus';
@@ -717,7 +790,7 @@ function renderDetail() {
   panel.append(head);
   const questKeys = questKeyList(q);
   if (questKeys.length) {
-    const gear = el('div', 'detail-section');
+    const gear = el('div', 'detail-section detail-kit');
     gear.append(el('div', 'section-title', 'KEYS TO BRING'));
     questKeys.forEach(k => {
       const row = el('p', 'requirement' + (k.optional ? ' optional-requirement' : ''));
@@ -732,7 +805,7 @@ function renderDetail() {
     gear.append(el('small', '', 'Keys for objectives you already confirmed are not listed.'));
     panel.append(gear);
   }
-  const section = el('div', 'detail-section'),
+  const section = el('div', 'detail-section detail-objectives'),
     title = el('div', 'section-title');
   title.append(
     el('span', 'eyebrow', 'OBJECTIVES'),
@@ -912,6 +985,7 @@ function renderDetail() {
         '. Possible item locations are candidates, not live loot.'
     )
   );
+  scheduleBriefAlign();
 }
 function renderBattlepass() {
   if (!mapDefinition) return;
@@ -4026,7 +4100,12 @@ function initMapEvents() {
     setMarkerPlacement(!markerAdding);
     if (markerAdding) toast('Click anywhere on the map to place your marker.');
   };
-  window.addEventListener('resize', () => setView());
+  window.addEventListener('resize', () => {
+    setView();
+    scheduleBriefAlign();
+  });
+  railLayout.addEventListener('change', scheduleBriefAlign);
+  $('quest-list').addEventListener('scroll', scheduleBriefAlign, { passive: true });
 }
 function localAssetPath(asset) {
   return 'assets' + asset.path;
