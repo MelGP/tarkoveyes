@@ -19,7 +19,7 @@ const root=path.join(source,'..');
 const installed=path.join(root,'App','resources','app');
 const manifestPath=path.join(root,'Documentation','SHA256.json');
 const runtimeDirs=['app','licenses'];
-const runtimeFiles=['appearance.cjs','core.cjs','imaging.cjs','items.cjs','main.cjs','preload.cjs','LICENSE','THIRD-PARTY.md'];
+const runtimeFiles=['appearance.cjs','core.cjs','imaging.cjs','items.cjs','main.cjs','preload.cjs','templates.cjs','LICENSE','THIRD-PARTY.md'];
 const check=process.argv.includes('--check');
 
 function hash(file){return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');}

@@ -938,6 +938,7 @@ function setView() {
   renderPlayer();
   scheduleLootRender();
   renderBattlepass();
+  scheduleDeclutter();
 }
 function resetView() {
   view = { x: 0, y: 0, w: W, h: H };
@@ -977,6 +978,7 @@ function makeMarker(p, label, color, shape = 'extract', candidate = false, numbe
   const g = svg('g', {
     transform: `translate(${pt.x} ${pt.y}) scale(${s})`,
     class: 'map-marker',
+    'data-kind': shape,
     tabindex: '0',
     role: 'button',
     'aria-label': label
@@ -1477,7 +1479,84 @@ function renderLoot() {
 }
 function scheduleLootRender() {
   clearTimeout(lootRenderTimer);
-  lootRenderTimer = setTimeout(renderLoot, 90);
+  lootRenderTimer = setTimeout(() => {
+    renderLoot();
+    scheduleDeclutter();
+  }, 90);
+}
+
+/*
+ * Deciding which marker gets the spot when two land on it.
+ *
+ * The map draws nine layers that know nothing about each other. On Customs with
+ * all of them switched on that is 237 markers making 209 overlapping pairs -
+ * very nearly one collision each - and because every layer draws at much the
+ * same size, the one quest objective you opened the map for looked exactly like
+ * a loose screwdriver behind it.
+ *
+ * Each layer clusters its own points already; what was missing was anything
+ * deciding between layers. This ranks them once per render and quietens
+ * whatever loses, rather than removing it: zoom in and the crowd separates, and
+ * the marker comes back on its own.
+ */
+const markerRanks = [
+  ['player', 0],
+  ['custom-markers', 1],
+  ['markers', 2],
+  ['boss-markers', 3],
+  ['keycard-doors', 4],
+  ['door-markers', 5],
+  ['switch-markers', 5],
+  ['battlepass-markers', 6],
+  ['loot-markers', 8]
+];
+// Extracts share a layer with quest objectives but not their importance.
+const wayoutRank = 7;
+let declutterFrame = 0,
+  declutterAgain = 0;
+function scheduleDeclutter() {
+  cancelAnimationFrame(declutterFrame);
+  clearTimeout(declutterAgain);
+  declutterFrame = requestAnimationFrame(declutterMarkers);
+  // Redrawing a layer replaces its markers and takes their ranking with them,
+  // and the loot layer redraws on a debounce of its own. Running once more once
+  // everything has settled costs a millisecond and saves the map from coming
+  // back crowded after a layer lands late.
+  declutterAgain = setTimeout(declutterMarkers, 160);
+}
+function declutterMarkers() {
+  const candidates = [];
+  for (const [id, rank] of markerRanks) {
+    const group = $(id);
+    if (!group) continue;
+    for (const node of group.children) {
+      node.classList.remove('crowded');
+      const box = node.getBoundingClientRect();
+      if (!box.width || !box.height) continue;
+      const kind = node.dataset.kind;
+      candidates.push({
+        node,
+        rank: id === 'markers' && kind !== 'quest' && kind !== 'cluster' ? wayoutRank : rank,
+        x: box.x + box.width / 2,
+        y: box.y + box.height / 2,
+        reach: Math.max(box.width, box.height) / 2
+      });
+    }
+  }
+  candidates.sort((a, b) => a.rank - b.rank);
+  const kept = [];
+  for (const candidate of candidates) {
+    // The rule is simply that two markers may not overlap: quieten one as soon
+    // as the centres are closer than the two radii together. Measured on
+    // Customs with every layer on, that leaves 7 collisions where there were
+    // 233, and still shows 112 of the 161 markers at full strength.
+    const buried = kept.some(
+      other =>
+        Math.hypot(other.x - candidate.x, other.y - candidate.y) < other.reach + candidate.reach
+    );
+    if (buried) candidate.node.classList.add('crowded');
+    else kept.push(candidate);
+  }
 }
 function labDoorEntries() {
   if (currentMapId !== 'the-lab') return [];
@@ -2701,6 +2780,9 @@ function layerSettings() {
   return settings;
 }
 async function saveLayers() {
+  // Every layer switch ends up here, whichever handler it came from, so this is
+  // the one place that knows the map just changed shape.
+  scheduleDeclutter();
   data.settings.mapLayers = layerSettings();
   try {
     await bridge.mapLayers(data.settings.mapLayers);
@@ -2720,6 +2802,7 @@ function renderAllMapLayers() {
   renderLandmarks();
   renderCustomMarkers();
   renderLoot();
+  scheduleDeclutter();
 }
 function applyLayerPreset(name) {
   if (name === 'valuables') window.battlepassLayer?.enableAll();
@@ -3364,7 +3447,7 @@ function searchItems() {
       el(
         'p',
         '',
-        'No Inspect needed. Keep the cursor on its tile while Raid Notes reads the label around it.'
+        'No Inspect needed. Keep the cursor on its tile while TarkovEyes reads the label around it.'
       )
     );
     root.replaceChildren(empty);

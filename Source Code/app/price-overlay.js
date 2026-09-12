@@ -54,6 +54,6 @@ try {
   message({
     state: 'error',
     message: 'Price card unavailable',
-    hint: 'Open Raid Notes and try again.'
+    hint: 'Open TarkovEyes and try again.'
   });
 }

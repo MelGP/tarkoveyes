@@ -55,7 +55,7 @@ const objectiveIds = new Set(
     q => q.objectives.map(o => o.id)
   )
 );
-app.setName('Raid Notes');
+app.setName('TarkovEyes');
 app.setPath('userData', path.join(app.getPath('appData'), 'RaidNotes'));
 function validateSender(event) {
   if (event.sender !== win.webContents) throw Error('Unknown caller');
@@ -191,7 +191,7 @@ function loadItemCatalog(mode) {
 }
 async function fetchItemJson(pathname) {
   const response = await fetch('https://json.tarkov.dev/' + pathname, {
-    headers: { accept: 'application/json', 'user-agent': 'RaidNotes item price updater' },
+    headers: { accept: 'application/json', 'user-agent': 'TarkovEyes item price updater' },
     signal: AbortSignal.timeout(25000)
   });
   if (!response.ok) throw Error('tarkov.dev returned HTTP ' + response.status);
@@ -828,7 +828,7 @@ function configureItemHotkey() {
 function normalizeBackup(doc) {
   const source = doc?.data || doc;
   if (!source || source.version !== 1 || !source.profiles?.pvp || !source.profiles?.pve)
-    throw Error('This is not a Raid Notes backup.');
+    throw Error('This is not a TarkovEyes backup.');
   source.profiles.seasonal ||= {};
   for (const mode of ['pvp', 'pve', 'seasonal']) {
     const p = (source.profiles[mode] ||= {});
@@ -884,7 +884,7 @@ async function refreshQuestLogs() {
   };
 }
 app.whenReady().then(() => {
-  app.setName('Raid Notes');
+  app.setName('TarkovEyes');
   // App-owned directory only. Never store anything under the game folders.
   store = new Store(path.join(app.getPath('userData'), 'local-data'));
   observer = new Observer();
@@ -894,7 +894,7 @@ app.whenReady().then(() => {
     minWidth: 1050,
     minHeight: 700,
     backgroundColor: '#101517',
-    title: 'Raid Notes',
+    title: 'TarkovEyes',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -1139,9 +1139,9 @@ app.whenReady().then(() => {
   });
   register('export-backup', async () => {
     const result = await dialog.showSaveDialog(win, {
-      title: 'Export Raid Notes backup',
-      defaultPath: 'RaidNotes-backup-' + new Date().toISOString().slice(0, 10) + '.json',
-      filters: [{ name: 'Raid Notes backup', extensions: ['json'] }]
+      title: 'Export TarkovEyes backup',
+      defaultPath: 'TarkovEyes-backup-' + new Date().toISOString().slice(0, 10) + '.json',
+      filters: [{ name: 'TarkovEyes backup', extensions: ['json'] }]
     });
     if (result.canceled) return null;
     await fs.promises.writeFile(
@@ -1161,9 +1161,9 @@ app.whenReady().then(() => {
   });
   register('import-backup', async () => {
     const result = await dialog.showOpenDialog(win, {
-      title: 'Import Raid Notes backup',
+      title: 'Import TarkovEyes backup',
       properties: ['openFile'],
-      filters: [{ name: 'Raid Notes backup', extensions: ['json'] }]
+      filters: [{ name: 'TarkovEyes backup', extensions: ['json'] }]
     });
     if (result.canceled) return null;
     const raw = await fs.promises.readFile(result.filePaths[0], 'utf8');

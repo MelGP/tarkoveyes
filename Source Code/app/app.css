@@ -1,4 +1,4 @@
-/* Design tokens — the single definition of the Raid Notes palette.
+/* Design tokens — the single definition of the TarkovEyes palette.
  *
  * Each redesign generation added its own :root block redefining the same
  * names, so 4 blocks competed and only the last value of each name ever
@@ -33,7 +33,7 @@
   --sidebar-width: 322px;
   --brief-width: 338px;
 }
-/* Raid Notes renderer stylesheet.
+/* TarkovEyes renderer stylesheet.
  * Merged from styles.css, v02.css, v03.css, v04.css, field-journal.css on 2026-09-11,
  * preserving the exact order those files were linked in, so the cascade is
  * unchanged. Sections below are the former files; later sections win.
@@ -955,3 +955,355 @@ img.trader-badge.trader-portrait {
 .unknown-quest strong { font-size: 12px; color: var(--text) }
 .unknown-quest small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px }
 .unknown-quest-portrait { width: 26px; height: 26px; flex: none; border-radius: 5px; object-fit: cover }
+
+
+
+/* ============================================================
+   Map layers opens beside the journal, not on top of it
+   ============================================================ */
+
+/* The sidebar is one column and everything in it competes for the same height.
+   With Map layers open the quest journal was squeezed to 50 pixels - less than
+   a single row - and pushed past the bottom of the window, so the journal
+   looked empty until the panel was closed again. Capping the panel was already
+   being tried and could never work: it was max-height 45vh with its own
+   scrollbar, and 45vh is most of the column.
+
+   The panel therefore leaves the column and opens beside it, over the map. The
+   disclosure keeps only its summary where it used to take 450 pixels, so the
+   journal is exactly as tall with the panel open as with it closed. */
+.layer-disclosure,
+.layer-disclosure[open] {
+  position: static;
+  overflow: visible;
+  max-height: none;
+  box-shadow: none;
+}
+
+/* Positioned against `main`, whose padding box starts exactly where the sidebar
+   column does, so `left` is the column's own width and nothing here has to
+   repeat a measurement that lives somewhere else. An earlier attempt hard-coded
+   294px and covered 44 pixels of the sidebar, because the column is actually
+   322 at this width. Being a child of `main` rather than of the sidebar also
+   means the sidebar can scroll on a short window without taking the panel with
+   it. */
+.layer-disclosure[open] > .layers {
+  position: fixed;
+  left: calc(var(--sidebar-width) + 26px);
+  top: calc(var(--header-height) + 16px);
+  bottom: auto;
+  max-height: calc(100vh - var(--header-height) - 32px);
+  z-index: 6;
+  width: 274px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3c484d transparent;
+  /* Translucent over a blur, so the map still reads underneath and the panel
+     looks laid over the table rather than cut out of it. */
+  background: #131a1dd9;
+  backdrop-filter: blur(14px) saturate(1.15);
+  border: 1px solid #3d4b4b;
+  border-radius: 12px;
+  box-shadow: 0 22px 55px #000a;
+  animation: layer-drawer 0.16s ease-out;
+}
+@keyframes layer-drawer {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+/* A few rows of the journal are worth more than a few more pixels of whatever
+   sits above it; below that the column scrolls rather than cutting rows off. */
+.quest-list { min-height: 150px }
+.sidebar,
+.sidebar:has(.layer-disclosure[open]) { overflow-y: auto }
+
+/* ============================================================
+   TarkovEyes identity, and a job for each accent
+   ============================================================ */
+
+/* Gold and blue were both already in the palette, but gold did everything and
+   blue did almost nothing, so nothing on screen told you what mattered. They
+   now have one rule between them:
+
+     gold  = the thing you are working on   (active quest, focus, primary action)
+     blue  = something the app is telling you (counts, labels, telemetry)
+
+   The neutrals follow the game's own: Tarkov writes its interface in a warm
+   khaki grey rather than a pure one, sampled at #c0c0b0 across the flea market,
+   handbook and in-raid screens. */
+:root {
+  --blue: #8fc0dc;
+  --blue-dim: #6f93a8;
+  --blue-soft: #16242c;
+  --khaki: #c9c7b8;
+}
+
+/* The mark: a faceted lens with a reticle for a pupil, drawn for this project
+   rather than lifted from the game, which is the line kept with interface art
+   everywhere else here. */
+.brand-icon {
+  position: relative;
+  background: linear-gradient(150deg, #1d2024, #12181a);
+  border: 1px solid #47443a;
+  box-shadow:
+    inset 0 1px 0 #ffffff0d,
+    0 6px 16px #0006;
+}
+.brand-icon .icon {
+  color: var(--gold);
+  filter: drop-shadow(0 0 6px #e9b96955);
+}
+.brand {
+  gap: 12px;
+}
+.brand > div {
+  color: var(--muted-strong);
+  font-weight: 600;
+}
+.brand b {
+  color: var(--gold);
+  font-weight: 800;
+}
+.brand small {
+  color: var(--blue-dim);
+}
+
+/* Counts and labels are the app talking, so they speak in blue. */
+.count {
+  color: var(--blue);
+  background: var(--blue-soft);
+  border: 1px solid #24333c;
+}
+.eyebrow {
+  color: var(--blue-dim);
+}
+.detail-head .eyebrow {
+  color: var(--gold);
+}
+.position-bar {
+  border-color: #2f4652;
+  background: linear-gradient(100deg, #16242cf2, #131c20f2);
+}
+.position-bar .position-icon {
+  color: var(--blue);
+}
+#position-age {
+  color: var(--blue-dim);
+}
+
+/* ============================================================
+   A pecking order for the markers
+   ============================================================ */
+
+/* Every layer drew at much the same weight, so a quest objective and a loose
+   screwdriver looked alike and the map read as a wall of circles. Three things
+   separate them now: what is loud, what is quiet, and what steps aside.
+
+   Loudest is what you came to the map for. */
+#markers .map-marker[data-kind='quest'],
+#markers .map-marker[data-kind='cluster'] {
+  filter: drop-shadow(0 0 7px #e9b96955);
+}
+#boss-markers .map-marker {
+  filter: drop-shadow(0 0 6px #00000099);
+}
+
+/* Quietest is the scenery you asked to see but are not hunting. */
+#loot-markers .map-marker {
+  opacity: 0.78;
+}
+#loot-markers .map-marker:hover,
+#loot-markers .map-marker:focus-visible {
+  opacity: 1;
+}
+#landmarks text,
+#extract-labels text {
+  opacity: 0.82;
+}
+
+/* And a marker that lost its spot to a more important one fades back rather
+   than disappearing: zoom in, the crowd separates, and it returns by itself.
+   Its own label goes, because two labels in one place is what made the map
+   unreadable in the first place. */
+.map-marker.crowded {
+  opacity: 0.22;
+  filter: none;
+}
+.map-marker.crowded text {
+  display: none;
+}
+.map-marker.crowded:hover,
+.map-marker.crowded:focus-visible {
+  opacity: 1;
+}
+
+/* The active raid row is the one thing on screen you are actually working on,
+   so it keeps the gold - but as an edge, not a box. The muddy olive outline it
+   had (#5b4b2e on a brown gradient) read as a disabled control rather than the
+   current selection. */
+.active-map-button {
+  border: 0;
+  border-left: 2px solid var(--gold);
+  border-radius: 0 8px 8px 0;
+  background: linear-gradient(100deg, #241f14, #171b19 70%);
+  color: #f0d39a;
+}
+.active-map-button:hover {
+  border-left-color: #f6d69f;
+  background: linear-gradient(100deg, #2d2617, #1b201d 70%);
+}
+.active-map-button:focus-visible {
+  outline-offset: 1px;
+}
+
+/* ============================================================
+   One system, instead of five generations of guesses
+   ============================================================ */
+
+/*
+ * The stylesheet grew over five redesigns and it shows: 12 different corner
+ * radii between 2 and 14 pixels, 29 different paddings between 1 and 40, and
+ * 30 separate rules arguing about one small label. Nothing was wrong on its
+ * own; together they read as noise, because the eye takes inconsistency as
+ * information and then finds none.
+ *
+ * This section does not restyle anything. It imposes a scale - three radii,
+ * one rhythm of space, one voice for labels - and removes edges that were only
+ * there because the thing beside them had one.
+ */
+:root {
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --pad: 18px;
+  --hairline: #22282a;
+}
+
+/* Corners: small for controls, medium for surfaces, large for overlays. */
+button,
+input,
+select,
+.pill,
+kbd,
+.count {
+  border-radius: var(--r-sm);
+}
+.connection-card,
+.quest-filter-panel,
+.item-card,
+.raid-kit-row,
+.unknown-quest,
+.stat-card,
+.dashboard-panel {
+  border-radius: var(--r-md);
+}
+dialog,
+.map-popup,
+.layer-disclosure[open] > .layers {
+  border-radius: var(--r-lg);
+}
+
+/* One voice for the small capitals. They were doing so much shouting that the
+   headings underneath them had nothing left to say. */
+.eyebrow {
+  font: 9px/1.4 Consolas, monospace;
+  letter-spacing: 1.3px;
+  color: var(--blue-dim);
+  text-transform: uppercase;
+}
+.detail-head .eyebrow {
+  color: var(--gold);
+}
+
+/* Edges only where something actually changes. The sidebar had a card inside a
+   panel inside a column, each with its own outline. */
+.connection-card {
+  border: 0;
+  background: #161d1f;
+}
+.quest-filter-panel {
+  border: 0;
+  background: transparent;
+}
+.layer-disclosure {
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.sidebar-footer,
+.map-toolbar {
+  border-color: var(--hairline);
+}
+
+/* The quest journal is a list, so it should look like one: no boxes, a hairline
+   between rows, and the gold dot carrying the state. */
+.quest-row {
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--hairline);
+  margin: 0;
+  padding: 11px 12px;
+}
+.quest-row:hover {
+  background: #1a2124;
+  border-color: var(--hairline);
+}
+.quest-row.selected {
+  background: linear-gradient(100deg, #241f14, #171b19 70%);
+  box-shadow: inset 2px 0 0 var(--gold);
+}
+
+/* The concentric rings behind the map name were decoration standing in for
+   design. The name is large, the column is quiet: that is enough. */
+.map-heading:before {
+  display: none;
+}
+.map-heading {
+  padding: var(--pad) var(--pad) 14px;
+}
+
+/* A list of sixty-two things should read as a list. Each row was 85 pixels
+   tall, so four of them filled the column and the journal felt like a stack of
+   cards you had to scroll rather than something you could scan. */
+.quest-row {
+  gap: 10px;
+  padding: 9px 12px;
+  align-items: center;
+}
+.quest-row strong {
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+.quest-row small {
+  margin-top: 3px;
+  line-height: 1.35;
+}
+.trader-portrait {
+  width: 30px;
+  height: 30px;
+}
+
+/* "Updated from logs" sat on every single row as a green chip. A badge that is
+   always there is not telling you anything; it is just taking the space the
+   quest name wanted. It stays - it is true, and occasionally useful - but as an
+   aside rather than an announcement. */
+.quest-row .log-source,
+.log-source {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #6d7b74;
+  font: 9px/1.3 Consolas, monospace;
+  letter-spacing: 0.4px;
+}
+
+/* Filler set in small capitals reads as a label and turns out to say nothing. */
+.map-heading p {
+  color: #63706f;
+  font-size: 9px;
+  letter-spacing: 1.2px;
+}

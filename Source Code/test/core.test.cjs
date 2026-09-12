@@ -221,7 +221,7 @@ test('complete quest catalogs are bundled and the UI does not force a Customs-on
   assert.match(renderer,/quests\s*=\s*\[\.\.\.allData\.quests,\s*\.\.\.extras\]\.sort/);
   assert.doesNotMatch(renderer,/quests\s*=\s*allData\.quests\.filter\(q\s*=>\s*q\.mapIds\.includes\('customs'\)\)/);
   assert.match(html,/id="map-filter"/);assert.match(html,/value="open" selected/);assert.match(html,/value="story"/);const pathFilter=html.match(/<select id="path-filter"[\s\S]*?<\/select>/)[0];assert.doesNotMatch(pathFilter,/value="battlepass"/);
-  assert.match(html,/RAID NOTES/);
+  assert.match(html,/TARKOV<b>EYES<\/b>/);
   const sheets=[...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(match=>match[1]);
   assert.deepEqual(sheets,['app.css','battlepass.css'],'the renderer loads the merged stylesheet and the Battle Pass layer, in that order');
   for(const sheet of sheets)assert.ok(fs.existsSync(path.join(__dirname,'../app',sheet)),sheet+' is bundled');
@@ -589,4 +589,20 @@ test('quest events name their trader so unlisted quests can still be identified'
   assert.equal(event.status,'completed');
   const traders=JSON.parse(fs.readFileSync(path.join(__dirname,'../app/data/traders.json'),'utf8')).traders;
   assert.ok(traders[event.trader],'a trader id from a notification resolves to a bundled portrait');
+});
+
+test('every module the main process loads is one the installed copy gets',()=>{
+  // A missing entry does not fail a test or a build: it crashes the installed
+  // application on launch with "Cannot find module", which is exactly what
+  // shipping templates.cjs without listing it did.
+  const read=name=>fs.readFileSync(path.join(__dirname,'..',name),'utf8');
+  const required=new Set();
+  for(const source of ['main.cjs','preload.cjs','core.cjs','items.cjs','imaging.cjs','appearance.cjs','templates.cjs'])
+    for(const found of read(source).matchAll(/require\('\.\/([\w.-]+\.cjs)'\)/g)) required.add(found[1]);
+  assert.ok(required.size>=5,'expected the main process to load several local modules');
+  const sync=read('tools/sync-installed.cjs'),pack=read('tools/package.cjs');
+  for(const module of required){
+    assert.ok(sync.includes("'"+module+"'"),module+' is loaded at runtime but tools/sync-installed.cjs does not copy it');
+    assert.ok(pack.includes("'"+module+"'"),module+' is loaded at runtime but tools/package.cjs does not package it');
+  }
 });

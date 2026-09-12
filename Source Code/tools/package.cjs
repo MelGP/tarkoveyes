@@ -9,7 +9,7 @@ for(const entry of fs.readdirSync(runtime)){
   fs.cpSync(path.join(runtime,entry),path.join(out,dest),{recursive:true});
 }
 const app=path.join(out,'resources/app');fs.mkdirSync(app,{recursive:true});
-for(const item of ['app','main.cjs','preload.cjs','core.cjs','items.cjs','imaging.cjs','appearance.cjs','licenses','LICENSE','THIRD-PARTY.md'])fs.cpSync(path.join(root,item),path.join(app,item),{recursive:true});
+for(const item of ['app','main.cjs','preload.cjs','core.cjs','items.cjs','imaging.cjs','appearance.cjs','templates.cjs','licenses','LICENSE','THIRD-PARTY.md'])fs.cpSync(path.join(root,item),path.join(app,item),{recursive:true});
 const manifest=require('../package.json'),lock=require('../package-lock.json');
 for(const [relative,metadata] of Object.entries(lock.packages||{})){
   if(!relative.startsWith('node_modules/')||metadata.dev)continue;
