@@ -551,6 +551,47 @@ test('legacy extract-name preference migrates to PMC and Scav subcategories', t 
   assert.equal(restarted.data.settings.mapLayers.labsKeycards, true);
   assert.equal(restarted.data.settings.mapLayers.labsKeycardNames, false);
 });
+test('a Tasks row picks the quest it names, digits and all', () => {
+  /* Measured on a real Tasks screenshot, the old matcher got both halves wrong
+     at once.
+
+     It rewarded containment with the ratio of the two lengths, and a row of that
+     table is the name plus Location, Status and Progress - so a perfect hit on
+     "The Tarkov Shooter - Part 7" scored 27 characters over about a hundred and
+     fell under every threshold. Then its word-overlap branch dropped words of
+     two characters or fewer, which is where the part number lives, so Parts 1
+     through 6 each scored 1.00 against the row that says Part 7.
+
+     The right quest scored 0.27 and six wrong ones scored 1.00. */
+  const quests = [1, 2, 6, 7].map(n => ({
+    id: 'shooter-' + n,
+    name: 'The Tarkov Shooter - Part ' + n,
+    objectives: []
+  }));
+  quests.push({ id: 'reserve', name: 'Reserve', objectives: [] });
+  quests.push({ id: 'import', name: 'Import', objectives: [] });
+  quests.push({ id: 'tarkov-import', name: 'The Tarkov Import', objectives: [] });
+
+  const row = 'x ) The Tarkov Shooter - Part 7    Any location   activel   0%';
+  const matches = parseTaskOcr(row, quests, []);
+  assert.equal(matches.length, 1, 'one row is one quest');
+  assert.equal(matches[0].questId, 'shooter-7');
+  assert.equal(matches[0].confidence, 1);
+
+  /* And the other half of it: 73 quests have one-word names, so a row naming a
+     quest on Reserve contains the quest "Reserve" as surely as it contains the
+     quest it is about. The longest name explains the most of the row. */
+  const collide = parseTaskOcr('x The Tarkov Import      Reserve     active!    83%', quests, []);
+  assert.equal(collide.length, 1);
+  assert.equal(collide[0].questId, 'tarkov-import');
+
+  /* A character lost to the OCR should not lose the quest. */
+  const slip = parseTaskOcr('x  Bulshit    Lighthouse   active!   0%', [
+    { id: 'bs', name: 'Bullshit', objectives: [] }
+  ]);
+  assert.equal(slip.length, 1);
+  assert.ok(slip[0].confidence > 0.8, 'a one-letter slip still scores well');
+});
 test('objective targets and reviewed OCR preserve partial counters', () => {
   const objective = {
       id: 'objective-a',
@@ -559,12 +600,23 @@ test('objective targets and reviewed OCR preserve partial counters', () => {
     },
     quest = { id: 'quest-a', name: 'Test Drive', objectives: [objective] };
   assert.equal(objectiveTarget(objective), 3);
+  /* The row carries its status, because every row of the Tasks table does and
+     the parser now requires it: a line with no status is a heading, a footer
+     or the stash panel beside the table, and treating those as rows is what
+     matched a quest called Documents against the task-items caption. */
   const matches = parseTaskOcr(
-    'TEST DRIVE\nEliminate 3 PMCs on Shoreline 2 / 3',
+    'TEST DRIVE  Shoreline  active!  66%\nEliminate 3 PMCs on Shoreline 2 / 3',
     [quest],
     ['quest-a']
   );
   assert.equal(matches.length, 1);
+  assert.equal(matches[0].rowActive, true);
+  assert.equal(matches[0].percent, 66);
+  // and a line with no status is not a row at all
+  assert.equal(
+    parseTaskOcr('TEST DRIVE\nEliminate 3 PMCs on Shoreline 2 / 3', [quest], ['quest-a']).length,
+    0
+  );
   assert.deepEqual(
     { ...matches[0].objectives[0], confidence: undefined },
     {

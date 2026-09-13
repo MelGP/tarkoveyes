@@ -8,6 +8,7 @@
   <symbol id="history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5m4-1v5l3 2"/></symbol>
   <symbol id="search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
   <symbol id="extract" viewBox="0 0 24 24"><path d="M14 5h6v14h-6M3 12h13m-4-4 4 4-4 4"/></symbol>
+  <symbol id="btr" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M2 15.2V11l2.6-1.6h9.2L21.4 13v2.2Z"/><path d="M9.2 9.4 10 6.6h3.2l.8 2.8Z"/><rect x="13.8" y="6.9" width="6.6" height="1.2" rx=".6"/><circle cx="4.7" cy="16.4" r="2"/><circle cx="8.6" cy="16.4" r="2"/><circle cx="13.1" cy="16.4" r="2"/><circle cx="17.2" cy="16.4" r="2"/></symbol>
   <symbol id="transit" viewBox="0 0 24 24"><path d="M4 7h15m-4-4 4 4-4 4M20 17H5m4 4-4-4 4-4"/></symbol>
   <symbol id="landmark" viewBox="0 0 24 24"><path d="m3 10 9-6 9 6M5 10h14v10H5V10Zm5 3h4v7h-4v-7Z"/></symbol>
   <symbol id="pin" viewBox="0 0 24 24"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>

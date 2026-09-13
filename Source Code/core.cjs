@@ -259,6 +259,92 @@ function textScore(expected, actual) {
   if (!words.size) return 0;
   return [...words].filter(word => seen.has(word)).length / words.size;
 }
+/* Scoring a quest name against a row of the Tasks table.
+ *
+ * `textScore` cannot do this, and measuring it on a real screenshot showed
+ * why in two ways at once.
+ *
+ * Its first branch rewards containment with the ratio of the two lengths. A
+ * row of that table is the name **plus** Location, Status and Progress, so a
+ * perfect hit on "The Tarkov Shooter - Part 7" scored 27 characters over about
+ * a hundred: **0.27**, under every threshold. Short names never stood a chance -
+ * Silent Caliber, Bullshit, Our Own Land and Reconnaissance were all read
+ * correctly and all thrown away.
+ *
+ * Its second branch then drops words of two characters or fewer, which throws
+ * away the part number. "Part 1" and "Part 7" have identical word sets, so
+ * Parts 1 through 6 each scored **1.00** against the row that says Part 7.
+ *
+ * The correct quest scored 0.27 and six wrong ones scored 1.00.
+ *
+ * So: containment is worth 1, nothing is dropped for being short, and a number
+ * in the name that is missing from the row caps the score below any threshold -
+ * a different part number is a different quest, not a near miss.
+ */
+function questRowScore(name, line) {
+  const a = normalizeOcr(name),
+    b = normalizeOcr(line);
+  if (!a || !b) return 0;
+  if (b.includes(a)) return 1;
+  const want = a.split(' ').filter(Boolean),
+    have = new Set(b.split(' ').filter(Boolean));
+  if (!want.length) return 0;
+  let hit = 0,
+    numberMissed = false;
+  for (const word of want) {
+    if (have.has(word)) hit++;
+    else if (/^\d+$/.test(word)) numberMissed = true;
+  }
+  const score = hit / want.length;
+  if (numberMissed) return Math.min(score, 0.45);
+  if (score >= 0.72 || !want.length) return score;
+
+  /* Word overlap is all-or-nothing per word, so a single lost character sinks
+     a one-word name completely: the OCR read Bullshit as "Bulshit" and the
+     quest scored zero. Compare letter pairs against the windows of the row
+     that are the right length, which is the same shape of fallback the item
+     matcher uses on a misread inventory label.
+
+     Only ever as a rescue, never as a promotion: it cannot beat a real word
+     match, and a wrong number still caps the score above. */
+  const words = b.split(' ').filter(Boolean);
+  let rescued = 0;
+  for (let i = 0; i + want.length <= words.length; i++) {
+    const window = words.slice(i, i + want.length).join(' ');
+    const near = bigramScore(a, window);
+    if (near > rescued) rescued = near;
+  }
+  return Math.max(score, rescued);
+}
+/* Dice coefficient over letter pairs: forgiving of a dropped or swapped
+   character, unforgiving of a different word. */
+function bigramScore(a, b) {
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return 0;
+  const pairs = s => {
+    const out = new Map();
+    for (let i = 0; i < s.length - 1; i++) {
+      const k = s.slice(i, i + 2);
+      out.set(k, (out.get(k) || 0) + 1);
+    }
+    return out;
+  };
+  const left = pairs(a),
+    right = pairs(b);
+  let shared = 0;
+  for (const [k, n] of left) shared += Math.min(n, right.get(k) || 0);
+  return (2 * shared) / (a.length - 1 + (b.length - 1));
+}
+/* What the row says beside the name. The table carries Status and Progress in
+   the same line, and reading them costs nothing: "activel" is how the OCR sees
+   "active!", and the percentage is the quest's own progress bar. */
+function questRowFacts(line) {
+  const percent = String(line).match(/(\d{1,3})\s*%/);
+  return {
+    active: /activ[e3]l?!?/i.test(line),
+    percent: percent ? Math.min(100, Number(percent[1])) : null
+  };
+}
 function parseTaskOcr(text, questCatalog, activeIds = []) {
   const lines = String(text || '')
       .split(/\r?\n/)
@@ -266,22 +352,59 @@ function parseTaskOcr(text, questCatalog, activeIds = []) {
       .filter(Boolean),
     active = new Set(activeIds || []),
     results = [];
-  for (const quest of questCatalog || []) {
-    let questIndex = -1,
-      questConfidence = 0;
-    lines.forEach((line, index) => {
-      const score = textScore(quest.name, line);
-      if (score > questConfidence) {
-        questConfidence = score;
-        questIndex = index;
+
+  /* Line first, not catalogue first.
+
+     Walking the catalogue and giving every quest its best line lets one row be
+     claimed by a dozen quests - which is exactly what happened: three real rows
+     produced fifteen matches, twelve of them other parts of the same series.
+     A row of that table is one quest, so each row picks its best quest and each
+     quest is taken once. */
+  const taken = new Set();
+  const claims = [];
+  lines.forEach((line, index) => {
+    let best = null,
+      bestScore = 0;
+    for (const quest of questCatalog || []) {
+      const score = questRowScore(quest.name, line);
+      /* Longest name wins a tie, and the tie is the common case: a row reading
+         "The Tarkov Import ... Reserve ... active!" contains the quests Import,
+         Reserve AND The Tarkov Import, all at 1.00, and there are 73 one-word
+         quest names to collide with the Location column. Without this the
+         winner was whichever happened to come first in the catalogue. A longer
+         containment is more of the row explained, so it is better evidence. */
+      if (
+        score > bestScore ||
+        (score === bestScore && best && quest.name.length > best.name.length)
+      ) {
+        bestScore = score;
+        best = quest;
       }
-    });
-    const threshold = active.has(quest.id) ? 0.52 : 0.72;
-    if (questConfidence < threshold) continue;
-    const from = Math.max(0, questIndex - 2),
+    }
+    if (!best) return;
+    const threshold = active.has(best.id) ? 0.52 : 0.72;
+    if (bestScore < threshold) return;
+    /* Every row of this table carries its status, so a line that does not is
+       not a row - it is a heading, a footer or the stash panel beside it. That
+       alone threw out a quest called Documents matched against the task-items
+       caption, and the version string in the corner, whose "1.1.5.0.47242"
+       supplied the digit that made The Punisher - Part 1 look plausible. */
+    if (!questRowFacts(line).active) return;
+    claims.push({ quest: best, index, score: bestScore, line });
+  });
+  /* Strongest claim on a quest wins it, so a stray line cannot take a quest
+     away from the row that actually names it. */
+  claims.sort((a, b) => b.score - a.score);
+
+  for (const claim of claims) {
+    if (taken.has(claim.quest.id)) continue;
+    taken.add(claim.quest.id);
+    const quest = claim.quest,
+      facts = questRowFacts(claim.line),
+      from = Math.max(0, claim.index - 2),
       to = Math.min(
         lines.length,
-        questIndex + Math.max(10, (quest.objectives?.length || 0) * 4) + 2
+        claim.index + Math.max(10, (quest.objectives?.length || 0) * 4) + 2
       ),
       windowLines = lines.slice(from, to),
       objectives = [];
@@ -297,7 +420,7 @@ function parseTaskOcr(text, questCatalog, activeIds = []) {
       });
       if (confidence < 0.38) continue;
       const neighborhood = windowLines.slice(Math.max(0, lineIndex - 1), lineIndex + 3).join(' '),
-        progress = neighborhood.match(/\b(\d+)\s*[\/]\s*(\d+)\b/),
+        progress = neighborhood.match(/\b(\d+)\s*[/]\s*(\d+)\b/),
         target = progress ? Number(progress[2]) : objectiveTarget(objective),
         value = progress ? Math.min(Number(progress[1]), target) : 0;
       const completed = /\b(?:completed|complete|done)\b/i.test(neighborhood) || value >= target;
@@ -313,7 +436,12 @@ function parseTaskOcr(text, questCatalog, activeIds = []) {
     results.push({
       questId: quest.id,
       questName: quest.name,
-      confidence: Number(questConfidence.toFixed(2)),
+      confidence: Number(claim.score.toFixed(2)),
+      /* The row itself says the quest is active and how far along it is. That
+         is the whole point of scanning this screen, and the old parser threw
+         both away and reported only objectives it could not find. */
+      rowActive: facts.active,
+      percent: facts.percent,
       objectives
     });
   }

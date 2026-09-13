@@ -56,6 +56,45 @@ fs.writeFileSync(
     2
   )
 );
+/* The icon in the exe.
+ *
+ * This packager is hand-rolled: it copies Electron's dist and renames
+ * electron.exe, so without this step the release wears Electron's own icon.
+ * Changing it means rewriting the binary's Windows resource section, which
+ * needs a resource editor - rcedit is the usual one, and it is not a
+ * dependency of this project.
+ *
+ * So: use it when it is there, and when it is not, say exactly what did not
+ * happen. A packager that silently ships the wrong icon is worse than one
+ * that tells you it could not change it.
+ */
+const icon = path.join(root, 'app/assets/TarkovEyes.ico');
+if (!fs.existsSync(icon)) {
+  console.warn('No app/assets/TarkovEyes.ico - run tools/build-icon.cjs first.');
+} else {
+  let rcedit = null;
+  try {
+    rcedit = require('rcedit');
+  } catch {
+    /* not installed, which is the normal case here */
+  }
+  if (rcedit) {
+    rcedit(path.join(out, 'RaidNotes.exe'), { icon }).then(
+      () => console.log('Stamped the icon into RaidNotes.exe'),
+      error => console.warn('Could not stamp the icon: ' + error.message)
+    );
+  } else {
+    console.warn(
+      "rcedit is not installed, so RaidNotes.exe keeps Electron's icon.\n" +
+        '  npm i -D rcedit   then re-run, or stamp it by hand:\n' +
+        '  npx rcedit "' +
+        path.join(out, 'RaidNotes.exe') +
+        '" --set-icon "' +
+        icon +
+        '"'
+    );
+  }
+}
 const hashes = {};
 function inventory(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

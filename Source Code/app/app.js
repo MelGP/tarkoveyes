@@ -33,6 +33,7 @@ let bridge = window.companion,
   myRaidOpen = false,
   activityUnread = 0,
   ocrSelection = [],
+  ocrQuests = [],
   markerAdding = false,
   markerDraftPosition = null,
   editingMarkerId = null,
@@ -352,6 +353,97 @@ function doneObjectivesOnMap() {
     for (const p of objectivePoints(q)) if (isDone(p.objective)) total++;
   return total;
 }
+/* Nine quest names appear more than once, and in the rail they were
+ * indistinguishable: same name, same trader, nothing to tell them apart.
+ * Make Amends appears three times. 17 such rows are visible here under the
+ * default filter.
+ *
+ * They are two different things and need two different answers.
+ *
+ * **BEAR and USEC** are one quest per faction - Drip-Out and Textile, four
+ * names, twelve quests - and you can only ever do one of each pair. The tag
+ * is the faction.
+ *
+ * **The rest are simply different tasks that share a name** - Battery Change,
+ * Make Amends, The Huntsman Path - Administrator, The Price of Independence,
+ * The Tarkov Shooter - Part 5. What separates those is where they send you,
+ * so the tag is the map.
+ *
+ * Computed once per render rather than per row: it is a walk of five hundred
+ * quests and the list redraws on every filter change.
+ */
+/* Looking at what actually differs inside each group turns nine names into
+ * three cases:
+ *
+ *   faction     Drip-Out 1 and 2, Textile 1 and 2 - one quest per faction,
+ *               and you can only ever do one of each pair.
+ *   same name,  The Tarkov Shooter - Part 5 (Customs / Streets), The
+ *   other map   Huntsman Path - Administrator (Reserve / Lighthouse).
+ *   identical   Make Amends x3, Battery Change x2, The Price of Independence
+ *               x2 - same trader, same maps, same objective text, different
+ *               id. The same quest listed more than once upstream.
+ *
+ * The first two get a tag. The third cannot: tagging three identical rows
+ * "Lighthouse" three times is the original complaint with extra ink. They
+ * collapse to one row instead, carrying the strongest status in the group,
+ * because that is what they are.
+ */
+let duplicateNames = null,
+  collapsedAway = null;
+function questShape(q) {
+  return [
+    q.name,
+    q.traderName,
+    /* The faction belongs in the key. Without it the BEAR and USEC halves of
+       Drip-Out and Textile are identical in every other field and collapse
+       into each other - which deletes the very distinction the tag beside
+       them exists to draw. */
+    q.faction || '',
+    [...(q.mapIds || [])].sort().join(','),
+    (q.objectives || []).map(o => o.description).join('|')
+  ].join('::');
+}
+const statusRank = { completed: 3, active: 2, failed: 1, untracked: 0 };
+function refreshDuplicateNames() {
+  const seen = new Map();
+  for (const q of quests) seen.set(q.name, (seen.get(q.name) || 0) + 1);
+  duplicateNames = new Set([...seen].filter(([, n]) => n > 1).map(([name]) => name));
+
+  /* Identical records collapse to whichever one the profile knows most
+     about, so a row never loses a status a sibling was carrying. */
+  const groups = new Map();
+  for (const q of quests) {
+    if (!duplicateNames.has(q.name)) continue;
+    const key = questShape(q);
+    const kept = groups.get(key);
+    if (!kept || (statusRank[status(q)] || 0) > (statusRank[status(kept)] || 0)) groups.set(key, q);
+  }
+  collapsedAway = new Set();
+  for (const q of quests) {
+    if (!duplicateNames.has(q.name)) continue;
+    const kept = groups.get(questShape(q));
+    if (kept && kept.id !== q.id) collapsedAway.add(q.id);
+  }
+}
+function questTag(q) {
+  if (!duplicateNames?.has(q.name)) return null;
+  if (q.faction) return q.faction;
+  /* The map only tells them apart if the twins are on different maps. Make
+     Amends is on Lighthouse three times, and saying so three times is the
+     complaint restated - those collapse instead. */
+  const twins = quests.filter(other => other.name === q.name && other.id !== q.id);
+  const maps = (q.mapIds || []).filter(id => mapDefinitions.some(m => m.id === id));
+  if (maps.length !== 1) return null;
+  const mine = maps[0];
+  return twins.some(other => (other.mapIds || []).includes(mine)) ? null : mapName(mine);
+}
+/* Which faction you play, derived rather than asked for: you can only
+   complete a quest that belongs to yours, so one finished half of any
+   BEAR/USEC pair settles it. Undefined until you have finished one. */
+function playerFaction() {
+  for (const q of quests) if (q.faction && status(q) === 'completed') return q.faction;
+  return null;
+}
 function questMarkerMeta(q) {
   const index = activeMapQuests().findIndex(item => item.id === q.id);
   return {
@@ -517,6 +609,7 @@ function applyFloor(value) {
   renderKeycardDoors();
   renderDoors();
   renderSwitches();
+  renderBtr();
   renderBosses();
   renderLoot();
   renderBattlepass();
@@ -557,6 +650,7 @@ function traderBadge(quest) {
   return image;
 }
 function renderList() {
+  refreshDuplicateNames();
   const search = $('quest-search').value.trim().toLowerCase(),
     map = $('map-filter').value,
     trader = $('trader').value,
@@ -568,6 +662,9 @@ function renderList() {
     lightkeeper = pathFilter === 'lightkeeper' ? lightkeeperPath() : null;
   const matching = quests.filter(
     q =>
+      /* An exact duplicate of a row already in the list adds nothing but a
+         second identical line to read past. */
+      !collapsedAway?.has(q.id) &&
       /* Hidden quests leave every list and the map. The Hidden filter is how
          they come back - without it they would be unreachable, which is a
          trap rather than a feature. */
@@ -613,6 +710,18 @@ function renderList() {
        the row carries the full name for a hover and for a screen reader. */
     const nameEl = el('strong', '', q.name);
     nameEl.title = q.name;
+    /* Only where the name is ambiguous. A tag on every row would be noise,
+       and these are 17 rows out of five hundred. */
+    const tag = questTag(q);
+    if (tag) {
+      const mark = el('span', 'quest-tag', tag);
+      /* The faction you cannot play is the one you can ignore, so it is
+         quieter rather than hidden - hiding it would make the pair look like
+         a single quest again. */
+      if (q.faction && playerFaction() && q.faction !== playerFaction())
+        mark.classList.add('other-faction');
+      nameEl.append(mark);
+    }
     body.append(nameEl);
     const markerCount = objectivePoints(q).length;
     body.append(
@@ -2493,6 +2602,203 @@ function showSwitch(control) {
   );
   pop.hidden = false;
 }
+/* The BTR stops, which until now existed only as a landmark caption and so
+ * only appeared if you had Landmarks switched on.
+ *
+ * The bundled POIs carry fourteen of them - six on Streets, eight on Woods -
+ * as a name and a position each, and nothing else. **There is no route in
+ * the data.** The ids run btr-0 upward, which looks like an order, but
+ * joining them in that order gives a loop only 21% shorter than a random
+ * one on Streets and 16% on Woods; a real driving order would be far better
+ * than that. And the vehicle follows roads, which are not in the file at
+ * all, so a straight line between two stops would cut through buildings.
+ *
+ * So: the stops are drawn, the route is not. Inventing the road it takes is
+ * exactly the kind of confident wrong line this project does not draw.
+ */
+/* In the order upstream lists them, which is a route the vehicle actually
+ * drives.
+ *
+ * This was got backwards once and it is worth the space. Each stop carries a
+ * localisation key - Trading/Dialog/PlayerTaxi/Woods/p5/Name - and that `p5`
+ * is not the array position, so the first reading here was that the array
+ * order was meaningless and the p-numbering was the sequence. The argument
+ * for it was that a straight-line tour in p-order is longer than the optimum,
+ * and a road-following vehicle has no reason to look efficient in straight
+ * lines - which is true, and answered a question nobody had asked.
+ *
+ * tarkovbtr.com publishes routes observed in raids, and they settle it:
+ *
+ *   Woods R5 WEST    Checkpoint, Sawmill, Scav Bunker, Sunken Village,
+ *                    Train Depot, Old Sawmill, Junction, Emercom Base
+ *   upstream array   p5 Checkpoint, p4 Sawmill, p1 Scav Bunker,
+ *                    p2 Sunken Village, p7 Old Sawmill, p8 Train Depot,
+ *                    p3 Junction, p6 Emercom Base
+ *
+ *   Streets R3 CINEMA  Rodina Cinema, Tram, Pinewood Hotel, Old Scav
+ *                      Checkpoint, Collapsed Crane, City Center
+ *   upstream array     p1, p2, p6, p5, p4, p3 - the same six, same order
+ *
+ * So the array order is a route: an exact match on Streets and one adjacent
+ * swap on Woods. `stop` stays on the record because it is the game's own
+ * label for a stop, but it is an id, not a sequence, and nothing sorts by it.
+ *
+ * **There is more than one route.** That source has five on Woods, three on
+ * Streets and three on Lighthouse, chosen by where the vehicle spawned, and
+ * they visit five to eight of the stops. One line cannot show that, so the
+ * popup says which one this is rather than implying it is the only one.
+ */
+function btrStops() {
+  return allPois.filter(p => p.kind === 'btr');
+}
+function renderBtr() {
+  const layer = $('btr-markers');
+  if (!layer) return;
+  layer.replaceChildren();
+  if (!mapDefinition || !$('layer-btr')?.checked) return;
+  const scale = markerScale();
+  const stops = btrStops();
+  /* The line first, so every marker sits on top of it.
+
+     What this is, exactly: the stops joined in the order the game numbers
+     them, in straight lines. It is **not** the road the BTR drives - no
+     source used here publishes that, and the map artwork has a Roads layer
+     but nothing saying which of them the vehicle uses. So it is a circuit
+     diagram, and the popup and the label both say so.
+
+     The order is upstream's own array order, which raid-observed routes
+     published on tarkovbtr.com match - see btrStops() for the comparison. An
+     earlier version of this sorted by the p-number instead and drew a shape
+     no route takes. */
+  if ($('layer-btr-route')?.checked && stops.length > 1) {
+    const ring = stops.filter(s => floorFor(s.position) === floor).map(s => point(s.position));
+    if (ring.length > 1) {
+      layer.append(
+        svg('path', {
+          class: 'btr-route',
+          d: 'M' + ring.map(p => p.x.toFixed(1) + ' ' + p.y.toFixed(1)).join('L') + 'Z',
+          'stroke-width': 2.2 * scale,
+          'stroke-dasharray': 7 * scale + ' ' + 5 * scale
+        })
+      );
+    }
+  }
+  for (const stop of stops) {
+    if (floorFor(stop.position) !== floor) continue;
+    const pt = point(stop.position),
+      g = svg('g', {
+        transform: `translate(${pt.x} ${pt.y}) scale(${scale})`,
+        class: 'map-marker btr-map-marker',
+        tabindex: '0',
+        role: 'button',
+        'aria-label': 'BTR stop · ' + stop.name
+      });
+    g.append(
+      svg('circle', {
+        r: 11,
+        fill: '#141a1c',
+        'fill-opacity': '.9',
+        stroke: '#9ab27a',
+        'stroke-width': 1.2
+      })
+    );
+    /* The vehicle in profile, facing right: a long sloped nose, a low hull,
+       the turret set forward of centre and four road wheels for the eight it
+       has. Filled rather than outlined - at seventeen pixels a silhouette
+       reads and a two-stroke outline turns to mush - and drawn for this
+       project rather than lifted from the game, which is the line kept with
+       interface art everywhere else here.
+
+       It was a rounded box on two wheels first, and the user said so: that
+       is a bus. What makes it a BTR is the wedge nose and the gun. */
+    const body = svg('g', { class: 'btr-glyph', transform: 'scale(.86)' });
+    body.append(
+      svg('path', {
+        d: 'M-8.4 1.4 L-8.4 -2.4 L-6 -3.9 L2.6 -3.9 L8.6 -0.2 L8.6 1.4 Z'
+      })
+    );
+    body.append(svg('path', { d: 'M-1.6 -3.9 L-0.8 -6.2 L2.2 -6.2 L3 -3.9 Z' }));
+    body.append(svg('rect', { x: 2.8, y: -5.8, width: 6.2, height: 1.1, rx: 0.5 }));
+    for (const cx of [-6, -2.4, 1.6, 5.4]) body.append(svg('circle', { cx, cy: 1.9, r: 1.9 }));
+    g.append(body);
+    /* The number only appears with the line, because on its own it is an
+       identifier nobody asked for; alongside the circuit it is what makes
+       the circuit readable. */
+    /* Numbered along the route rather than by `stop`: the badge exists to
+       make the line readable, and for that the useful number is how far
+       along you are, not which id the game gave the place. */
+    const order = stops.indexOf(stop) + 1;
+    if ($('layer-btr-route')?.checked && order) {
+      g.append(
+        svg('circle', {
+          cx: 8.4,
+          cy: -8.4,
+          r: 5.4,
+          fill: '#141a1c',
+          stroke: '#9ab27a',
+          'stroke-width': 1.1
+        })
+      );
+      const n = svg('text', {
+        x: 8.4,
+        y: -6.4,
+        fill: '#c4dba4',
+        'font-size': 7,
+        'font-weight': 700,
+        'text-anchor': 'middle'
+      });
+      n.textContent = order;
+      g.append(n);
+    }
+    const title = svg('title');
+    title.textContent = 'BTR stop · ' + stop.name;
+    g.append(title);
+    const open = () => showBtrStop(stop);
+    g.onclick = event => {
+      event.stopPropagation();
+      open();
+    };
+    g.onkeydown = event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    };
+    layer.append(g);
+  }
+}
+function showBtrStop(stop) {
+  const pop = $('map-popup');
+  pop.replaceChildren();
+  const close = el('button', 'icon-only popup-close');
+  close.append(uiIcon('close'));
+  close.setAttribute('aria-label', 'Close BTR stop');
+  close.onclick = () => (pop.hidden = true);
+  pop.append(
+    close,
+    el('span', 'eyebrow', 'BTR STOP'),
+    el('strong', '', stop.name),
+    el(
+      'small',
+      '',
+      'Stop ' +
+        (btrStops().indexOf(stop) + 1) +
+        ' of ' +
+        btrStops().length +
+        ' · ' +
+        floorName(floorFor(stop.position))
+    ),
+    el(
+      'small',
+      /* Said out loud rather than implied by an absent line: the data has
+         the stops and not the route, and a person reading a map deserves to
+         know which of the two they are looking at. */
+      '',
+      'The line joins the stops in the order the game lists them - one of several routes the BTR runs, chosen by where it spawns - in straight lines. The roads it takes between them are in no published data.'
+    )
+  );
+  pop.hidden = false;
+}
 function renderSwitches() {
   const layer = $('switch-markers');
   if (!layer) return;
@@ -3289,7 +3595,17 @@ function renderMyRaid(focus = false) {
     const points = objectivePoints(q).length;
     /* Under a heading that already reads NO FIXED LOCATION, a line on every
        row saying "No fixed map point" is the same sentence eleven times. The
-       group says it once; the row says where to go, or nothing. */
+       group says it once; the row says where to go - or, when there is
+       nowhere, what it wants instead.
+
+       36 of this profile's 63 active quests have no point on any map, and
+       their first outstanding objective is the thing you would actually plan
+       around: "Eliminate 20 PMCs with AK-12 with the proprietary suppressor"
+       is a loadout decision, and the row was showing only a trader name. */
+    if (!points) {
+      const next = q.objectives.find(o => !o.optional && !isDone(o)) || q.objectives[0];
+      if (next) open.append(el('small', 'raid-wants', next.description));
+    }
     if (points)
       open.append(
         el(
@@ -3410,6 +3726,9 @@ function updateLayerChildren() {
   $('layer-scav-extract-labels').disabled = !$('layer-scav').checked;
   $('layer-transit-labels').disabled = !$('layer-transit').checked;
   $('layer-lab-keycard-labels').disabled = !$('layer-lab-keycards').checked;
+  /* The circuit is a way of reading the stops, so it follows them: with the
+     stops off there is nothing for a line to join. */
+  $('layer-btr-route').disabled = !$('layer-btr').checked;
 }
 function updateMapSpecificLayers() {
   const labs = currentMapId === 'the-lab';
@@ -3457,6 +3776,19 @@ function updateHazardCounts() {
       : '';
 }
 function updateLayerCounts() {
+  const btrCount = $('btr-count');
+  if (btrCount) {
+    const total = btrStops().length;
+    btrCount.textContent = total;
+    btrCount.hidden = !total;
+    /* Only two maps have a BTR, so on the other eleven the row hides itself
+       rather than offering a layer that would draw nothing - the same thing
+       the landmark checkbox does where there are no usable names. */
+    const row = btrCount.closest('label');
+    if (row) row.hidden = !total;
+    const child = $('layer-btr-route-row');
+    if (child) child.hidden = !total;
+  }
   const doneCount = $('done-objective-count');
   if (doneCount) {
     const total = doneObjectivesOnMap();
@@ -3547,6 +3879,8 @@ function layerSettings() {
     lockedDoors: $('layer-doors').checked,
     switches: $('layer-switches').checked,
     bossSpawns: $('layer-bosses').checked,
+    btrStops: $('layer-btr').checked,
+    btrRoute: $('layer-btr-route').checked,
     ...Object.fromEntries(hazardKinds.map(kind => [kind.key, $(kind.control).checked]))
   };
   for (const [key, id] of [...containerLayers, ...looseLayers])
@@ -4252,14 +4586,30 @@ function renderDashboard() {
   const byTrader = el('div', 'dashboard-panel');
   byTrader.append(el('h3', '', 'Trader progress'));
   const traders = [...new Set(quests.map(q => q.traderName))].sort();
+  /* A quest whose every recorded prerequisite is satisfied and that the
+     application has no record of is one this trader can hand you now. It is
+     the same derivation the Available now filter uses; what is new is saying
+     WHO is holding them, which is the form you can act on before you log in.
+     Measured here: 23 across eight traders, four of them at Therapist. */
+  const waiting = new Map();
+  for (const q of quests.filter(questAvailable))
+    waiting.set(q.traderName, (waiting.get(q.traderName) || 0) + 1);
   for (const trader of traders) {
     const list = quests.filter(q => q.traderName === trader),
       complete = list.filter(q => status(q) === 'completed').length,
+      ready = waiting.get(trader) || 0,
       row = el('button', 'dashboard-link');
-    row.append(el('span', '', trader), el('small', '', complete + ' / ' + list.length));
+    row.append(el('span', '', trader));
+    /* Only where there is something to collect - a zero on every other row
+       would be eleven ways of saying nothing. */
+    if (ready) row.append(el('span', 'trader-waiting', ready + ' waiting'));
+    row.append(el('small', '', complete + ' / ' + list.length));
     row.onclick = () => {
       $('dashboard-dialog').close();
       $('trader').value = trader;
+      /* Clicking a trader who has something waiting shows you that, rather
+         than their whole history - which is what you came to the row for. */
+      if (ready) $('status-filter').value = 'available';
       renderList();
     };
     byTrader.append(row);
@@ -4654,25 +5004,67 @@ async function refreshItemPrices() {
 }
 function renderScanResults(result) {
   ocrSelection = [];
+  ocrQuests = [];
   $('scan-results').replaceChildren();
   $('ocr-preview').textContent = result.textPreview || '';
   const matches = result.matches || [];
   $('scan-summary').textContent = matches.length
     ? matches.length +
-      ' possible quest match' +
-      (matches.length === 1 ? '' : 'es') +
-      ' · review before applying.'
-    : 'No reliable quest names were found. Try a clearer Tasks screenshot.';
+      ' quest' +
+      (matches.length === 1 ? '' : 's') +
+      ' found' +
+      /* Two screens are worth scanning and they carry different things. The
+         Tasks table is names, locations, statuses and progress bars and has no
+         objective text at all; a single quest opened shows every objective and
+         a tick against the ones you have done. Say which one arrived, once,
+         rather than on every card. */
+      (matches.some(m => m.objectives.length)
+        ? ' with ' +
+          matches.reduce((n, m) => n + m.objectives.length, 0) +
+          ' objective' +
+          (matches.reduce((n, m) => n + m.objectives.length, 0) === 1 ? '' : 's') +
+          ' · review before applying.'
+        : ' · this screen lists quests, not objective progress. Open a single quest to import its objectives.')
+    : 'No quest names were read. The Tasks list and a single opened quest both work; a clearer or larger capture helps.';
   for (const match of matches) {
     const card = el('div', 'scan-card');
+    const known = status(quests.find(q => q.id === match.questId) || {});
     card.append(
       el('strong', '', match.questName),
-      el('small', '', Math.round(match.confidence * 100) + '% quest-name match')
+      el(
+        'small',
+        '',
+        Math.round(match.confidence * 100) +
+          '% name match' +
+          (match.percent === null || match.percent === undefined
+            ? ''
+            : ' · the row reads ' + match.percent + '%')
+      )
     );
-    if (!match.objectives.length)
-      card.append(
-        el('p', 'activity-empty', 'Quest recognized, but no objective progress was readable.')
+    /* The Tasks screen is a table of names, locations, statuses and progress
+       bars - it carries no objective text at all. So the only thing this
+       dialog could ever apply was absent from the one screen it exists for,
+       and the Apply button was disabled every single time. The quest itself
+       is the thing to import: the row says it is active, and that is what
+       the application does not know about 245 of them. */
+    if (match.rowActive && known === 'untracked') {
+      const label = el('label', 'scan-objective scan-quest'),
+        check = el('input');
+      check.type = 'checkbox';
+      check.checked = true;
+      check.dataset.scanQuest = match.questId;
+      const body = el('span');
+      body.append(
+        el('span', '', 'Mark this quest Active'),
+        el('small', '', 'The app has no record of it. The row on screen says active.')
       );
+      label.append(check, body);
+      card.append(label);
+      ocrQuests.push({ id: match.questId, name: match.questName, element: check });
+    } else if (match.rowActive && known !== 'untracked') {
+      card.append(el('small', 'scan-known', 'Already recorded as ' + known + ' - left alone.'));
+    }
+
     for (const objective of match.objectives) {
       const id = match.questId + ':' + objective.id,
         label = el('label', 'scan-objective'),
@@ -4706,7 +5098,7 @@ function renderScanResults(result) {
     }
     $('scan-results').append(card);
   }
-  $('apply-scan').disabled = !ocrSelection.length;
+  $('apply-scan').disabled = !ocrSelection.length && !ocrQuests.length;
 }
 async function runTaskScan() {
   if (!window.companion) {
@@ -5584,6 +5976,8 @@ async function start() {
     lockedDoors: false,
     switches: false,
     bossSpawns: false,
+    btrStops: false,
+    btrRoute: false,
     ...Object.fromEntries(hazardKinds.map(kind => [kind.key, false])),
     ...data.settings.mapLayers
   };
@@ -5606,6 +6000,8 @@ async function start() {
     ['layer-doors', 'lockedDoors'],
     ['layer-switches', 'switches'],
     ['layer-bosses', 'bossSpawns'],
+    ['layer-btr', 'btrStops'],
+    ['layer-btr-route', 'btrRoute'],
     ...hazardKinds.map(kind => [kind.control, kind.key])
   ])
     $(id).checked = !!data.settings.mapLayers[key];
@@ -5791,6 +6187,12 @@ async function start() {
     renderLandmarks();
     saveLayers();
   };
+  for (const id of ['layer-btr', 'layer-btr-route'])
+    $(id).onchange = () => {
+      renderBtr();
+      updateLayerChildren();
+      saveLayers();
+    };
   const hideDone = $('layer-hide-done');
   if (hideDone) hideDone.onchange = () => setHideDone(hideDone.checked);
   $('layer-custom').onchange = () => {
@@ -5895,9 +6297,10 @@ async function start() {
   $('rescan-tasks').onclick = runTaskScan;
   $('close-scan').onclick = () => $('scan-dialog').close();
   $('apply-scan').onclick = async () => {
-    const chosen = ocrSelection.filter(item => item.element.checked);
-    if (!chosen.length) {
-      toast('Select at least one recognized objective.');
+    const chosen = ocrSelection.filter(item => item.element.checked),
+      newQuests = ocrQuests.filter(item => item.element.checked);
+    if (!chosen.length && !newQuests.length) {
+      toast('Nothing is ticked to apply.');
       return;
     }
     const button = $('apply-scan');
@@ -5919,7 +6322,13 @@ async function start() {
          untracked is promoted: a completed or failed record is a stronger
          statement than a reading of a screenshot and is left alone. */
       const started = [];
-      for (const id of new Set(chosen.map(item => item.questId))) {
+      /* Both routes to the same place: a quest the reviewer ticked outright,
+         and a quest whose objectives were ticked, which means you are on it. */
+      const wanted = new Set([
+        ...newQuests.map(item => item.id),
+        ...chosen.map(item => item.questId)
+      ]);
+      for (const id of wanted) {
         const q = quests.find(item => item.id === id);
         if (!q || status(q) !== 'untracked') continue;
         await changeProgress({ type: 'quest', id, value: 'active' });
@@ -5929,19 +6338,12 @@ async function start() {
       if (selected) renderDetail();
       renderList();
       renderMarkers();
-      toast(
-        chosen.length +
-          ' objective update' +
-          (chosen.length === 1 ? '' : 's') +
-          ' applied. Completed steps are confirmed; partial counts remain reviewable.' +
-          (started.length
-            ? ' ' +
-              started.length +
-              ' quest' +
-              (started.length === 1 ? ' is' : 's are') +
-              ' now on the map.'
-            : '')
-      );
+      const said = [];
+      if (started.length)
+        said.push(started.length + ' quest' + (started.length === 1 ? '' : 's') + ' marked active');
+      if (chosen.length)
+        said.push(chosen.length + ' objective update' + (chosen.length === 1 ? '' : 's'));
+      toast(said.join(' · ') + '. They are on the map now.');
     } catch (e) {
       toast('Could not apply the scan: ' + e.message, 'error');
     } finally {

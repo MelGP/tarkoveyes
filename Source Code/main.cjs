@@ -217,6 +217,43 @@ async function updateItemCatalog(mode) {
   itemCatalogs.delete(mode);
   return catalog;
 }
+/* Prices on launch.
+ *
+ * Until now this application reached the network only when a person pressed
+ * Update prices, and the About panel said so in as many words. The user asked
+ * for it to happen on open instead, so it does - and the About panel had to
+ * be corrected in the same change, because a program that describes its own
+ * network behaviour wrongly is worse than one that never described it.
+ *
+ * Three things keep it well-mannered:
+ *
+ * - **It never delays the window.** It is scheduled after the window is
+ *   loading and awaited by nothing.
+ * - **It is silent when it fails.** Offline is the normal case for a launch
+ *   nobody asked anything of, and the bundled prices stay exactly as they
+ *   were. A startup error box for something the person did not request is
+ *   noise. The Items view still shows the date the prices carry, so a stale
+ *   figure is never presented as fresh.
+ * - **It has a floor.** tarkov.dev is a free community service and the prices
+ *   move about hourly, so an hour-old catalogue is left alone. Opening the
+ *   application once a session refreshes every time; opening it five times in
+ *   ten minutes fetches once.
+ */
+const priceFloorMs = 60 * 60 * 1000;
+async function refreshPricesOnLaunch() {
+  const mode = store.data.mode;
+  try {
+    const current = loadItemCatalog(mode),
+      stamp = Date.parse(current?.pricesUpdatedAt || current?.generatedAt || 0);
+    if (Number.isFinite(stamp) && Date.now() - stamp < priceFloorMs) return;
+    await updateItemCatalog(mode);
+    // Only worth saying if the view that shows prices is already open.
+    if (win && !win.isDestroyed()) win.webContents.send('prices-refreshed', mode);
+  } catch {
+    /* No network, or tarkov.dev is down. The bundled catalogue is still
+       there and still stamped with its own date. */
+  }
+}
 async function ensureOcrWorker() {
   if (!ocrWorkerPromise)
     ocrWorkerPromise = (async () => {
@@ -1018,6 +1055,8 @@ app.whenReady().then(() => {
       'lockedDoors',
       'switches',
       'bossSpawns',
+      'btrStops',
+      'btrRoute',
       'hazardMinefield',
       'hazardSniper',
       'hazardMortar',
@@ -1091,7 +1130,11 @@ app.whenReady().then(() => {
       hasNote = typeof input?.note === 'string',
       hasFavorite = typeof input?.favorite === 'boolean',
       hasHidden = typeof input?.hidden === 'boolean';
-    if (!ids.has(id) || (!hasNote && !hasFavorite && !hasHidden) || (hasNote && input.note.length > 2000))
+    if (
+      !ids.has(id) ||
+      (!hasNote && !hasFavorite && !hasHidden) ||
+      (hasNote && input.note.length > 2000)
+    )
       throw Error('Invalid quest metadata');
     const p = store.data.profiles[mode];
     if (hasNote) {
@@ -1299,6 +1342,11 @@ app.whenReady().then(() => {
     app.quit();
   });
   observer.start(store.data.settings).catch(() => {});
+  /* After the window, never before it: a launch must not wait on a network
+     call, and this one is allowed to take as long as it likes or fail. */
+  setTimeout(() => {
+    refreshPricesOnLaunch();
+  }, 1500);
 });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', async () => {

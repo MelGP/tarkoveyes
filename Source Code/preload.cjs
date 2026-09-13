@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('companion', {
     ipcRenderer.on('item-hotkey-status', handler);
     return () => ipcRenderer.removeListener('item-hotkey-status', handler);
   },
+  onPricesRefreshed: handler => ipcRenderer.on('prices-refreshed', (_event, mode) => handler(mode)),
   onItemHotkeyResult: callback => {
     const handler = (_e, event) => callback(event);
     ipcRenderer.on('item-hotkey-result', handler);
