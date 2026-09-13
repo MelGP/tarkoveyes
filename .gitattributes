@@ -1,1 +1,10 @@
+# app/data/item-templates.bin is 13 MB of packed item artwork, and its first
+# NUL byte is 2.1 MB in - far past the 8000 bytes git reads to decide whether a
+# file is binary. So git classifies it as TEXT, and anyone who clones with
+# core.autocrlf=true (the Git for Windows default) gets CRLF conversion applied
+# to it: 134,171 lone LF bytes become CRLF, the file grows by that much, and it
+# no longer parses.
+#
+# This line is what stops that. Verified by cloning with core.autocrlf=true and
+# comparing the SHA-256 - identical, byte for byte.
 *.bin binary
