@@ -903,6 +903,10 @@ app.whenReady().then(() => {
   store = new Store(path.join(app.getPath('userData'), 'local-data'));
   observer = new Observer();
   win = new BrowserWindow({
+    /* The window and taskbar icon while the application runs. The packaged
+       exe keeps whatever icon it was built with - changing that needs a .ico
+       and a repackage - so this is the one a person actually sees. */
+    icon: path.join(__dirname, 'app', 'assets', 'logo.png'),
     width: 1480,
     height: 940,
     minWidth: 1050,

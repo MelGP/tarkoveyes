@@ -23,6 +23,11 @@
   addEventListener('unhandledrejection', onError);
 
   async function check(name, fn) {
+    /* A hung check looks exactly like a slow one from outside, and the suite
+       prints nothing until it finishes, so a run that never ends tells you
+       nothing about where it stopped. This is the cheapest possible answer:
+       read window.__smokeRunning over the debug port while it is going. */
+    window.__smokeRunning = name;
     const before = errors.length;
     try {
       const detail = await fn();
@@ -579,7 +584,12 @@
       // tree, which is exactly why the other three are not buttons
       if (biggest / nodes > 0.5)
         throw Error(
-          label + ' is not shaped like a route: ' + biggest + ' of its ' + nodes + ' quests are in one column'
+          label +
+            ' is not shaped like a route: ' +
+            biggest +
+            ' of its ' +
+            nodes +
+            ' quests are in one column'
         );
       // and a quest inside it opens its own chain, so the two views connect
       const node = document.querySelector('#chain-content .chain-node');
@@ -593,9 +603,288 @@
     }
     document.querySelectorAll('dialog[open]').forEach(d => d.close());
     await resetToDefaults();
-    return pressable.length + ' routes (' + pressable.join(', ') + '), ' + readings.length + ' readings';
+    return (
+      pressable.length + ' routes (' + pressable.join(', ') + '), ' + readings.length + ' readings'
+    );
   });
 
+  await check('a quest objective does not look like a count', async () => {
+    // Three layers were drawing a ring with a number in it for three
+    // different meanings - which quest this is, how many objectives are
+    // stacked here, how many loot points are nearby - and the user could not
+    // tell them apart. The rule now is that an objective is a pin and a count
+    // is a circle, so this asserts the silhouettes rather than the colours.
+    await resetToDefaults();
+    await openMap('shoreline');
+    /* The marker layer draws the selected quest alone when there is one, and
+       resetToDefaults does not clear a selection - an earlier check leaves one
+       behind, and then this reads 'no quest markers' about a map full of them.
+       My Raid is the state that draws the whole active set, so ask for it. */
+    $('show-active').click();
+    await wait(900);
+    const preset = [...document.querySelectorAll('[data-layer-preset]')].find(b =>
+      /valuables/i.test(b.dataset.layerPreset)
+    );
+    if (!preset) throw Error('no valuables preset to switch the loot layer on');
+    preset.click();
+    await wait(1800);
+
+    const quest = [...$('markers').children].filter(
+      g => g.dataset.kind === 'quest' || g.dataset.kind === 'cluster'
+    );
+    const loot = [...$('loot-markers').children];
+    if (!quest.length) throw Error('no quest markers on Shoreline to judge');
+    if (!loot.length) throw Error('the loot layer drew nothing to compare against');
+
+    const noPin = quest.filter(g => !g.querySelector('path'));
+    if (noPin.length)
+      throw Error(noPin.length + ' of ' + quest.length + ' quest markers are not pins');
+    const lootPins = loot.filter(g => g.querySelector('path'));
+    if (lootPins.length)
+      throw Error(lootPins.length + ' loot markers are drawn as pins, which is the quest shape');
+
+    // A pin stands on its point; a circle is centred on it. That is what
+    // makes the tip the coordinate, so check the glyph really sits above.
+    const box = quest[0].getBBox();
+    if (box.y > -18 || box.y + box.height > 6)
+      throw Error(
+        'the quest glyph is centred on its point rather than standing on it: y ' +
+          box.y.toFixed(1) +
+          ' to ' +
+          (box.y + box.height).toFixed(1)
+      );
+
+    // and several objectives on one spot must not look like one objective
+    // carrying that number - the same collision, moved one layer in. A stack
+    // is literally three silhouettes, so count them rather than measuring the
+    // width: the quest-number badge made a single pin wider and width stopped
+    // telling the two apart.
+    const one = quest.find(g => g.dataset.kind === 'quest');
+    const many = quest.find(g => g.dataset.kind === 'cluster');
+    if (one && many) {
+      const singles = one.querySelectorAll('path').length,
+        stacked = many.querySelectorAll('path').length;
+      if (stacked <= singles)
+        throw Error(
+          'a stack of objectives is the same silhouette as one: ' +
+            stacked +
+            ' pins against ' +
+            singles
+        );
+    }
+
+    // The head says what you do at the point - find, go, mark, plant, kill -
+    // and that is only worth anything if the five draw five different things.
+    // Ask the table rather than the screen: which verbs are on a map depends
+    // on which quests the profile has active, and on Shoreline that is one,
+    // so a screen-only comparison silently never runs. Written that way it
+    // passed 33/33 with every verb drawing the same dot.
+    const verbs = ['find', 'visit', 'mark', 'plant', 'shoot', 'signal', 'extract'];
+    const glyphOf = (verb, colour) => {
+      const box = svg('g');
+      for (const shape of verbGlyph(verb, colour)) box.append(shape);
+      return box.innerHTML;
+    };
+    const reference = new Map(verbs.map(verb => [verb, glyphOf(verb, '#ffffff')]));
+    if (new Set(reference.values()).size !== verbs.length) {
+      const seen = new Map(),
+        same = [];
+      for (const [verb, shape] of reference)
+        if (seen.has(shape)) same.push(seen.get(shape) + '/' + verb);
+        else seen.set(shape, verb);
+      throw Error('objective kinds sharing one glyph: ' + same.join(', '));
+    }
+
+    // and a pin on the map really is drawing the glyph its label claims
+    const heads = new Map();
+    for (const g of quest.filter(n => n.dataset.kind === 'quest')) {
+      const said = (g.getAttribute('aria-label') || '').match(/\(([^)]+)\)$/);
+      const head = g.querySelector('g');
+      if (!head || !head.children.length) throw Error('a quest pin has no glyph in its head');
+      const verb = verbs.find(v => said && verbLabels[v].toLowerCase() === said[1]);
+      if (verb) {
+        const colour = g.querySelector('path').getAttribute('stroke');
+        if (head.innerHTML !== glyphOf(verb, colour))
+          throw Error('the pin labelled "' + said[1] + '" is not drawing the ' + verb + ' glyph');
+      }
+      heads.set(said ? said[1] : 'other', head.innerHTML);
+    }
+    const tally =
+      quest.filter(g => g.dataset.kind === 'quest').length +
+      ' pins (' +
+      [...heads.keys()].join(', ') +
+      '), ' +
+      quest.filter(g => g.dataset.kind === 'cluster').length +
+      ' stacks, ' +
+      loot.length +
+      ' loot circles';
+    const clean = [...document.querySelectorAll('[data-layer-preset]')].find(b =>
+      /clean/i.test(b.dataset.layerPreset)
+    );
+    if (clean) clean.click();
+    await resetToDefaults();
+    return tally;
+  });
+  await check('a finished objective does not look like one still to do', async () => {
+    // isDone used to be read only when the quest was NOT in My Raid, which is
+    // exactly when you are not working on it, so for the quests you are on a
+    // finished objective drew the identical pin and the map went on pointing
+    // at places you had already been.
+    //
+    // Nothing here is saved: isDone is made to say yes for one objective, the
+    // markers are redrawn, and the real function goes back in the finally.
+    await resetToDefaults();
+    await openMap('customs');
+    $('show-active').click();
+    await wait(900);
+
+    let victim = null;
+    for (const q of activeMapQuests()) {
+      const points = objectivePoints(q);
+      if (points.length) {
+        victim = points[0].objective;
+        break;
+      }
+    }
+    if (!victim) throw Error('no active quest with a map point on Customs to judge');
+
+    const readPin = () => {
+      const g = [...$('markers').children].find(
+        n =>
+          n.dataset.kind === 'quest' &&
+          (n.getAttribute('aria-label') || '').includes(victim.description.slice(0, 24))
+      );
+      if (!g) return null;
+      return {
+        stroke: g.querySelector('path').getAttribute('stroke'),
+        opacity: Number(g.getAttribute('opacity')),
+        head: g.querySelector('g').innerHTML,
+        label: g.getAttribute('aria-label') || ''
+      };
+    };
+
+    const real = window.isDone;
+    let before, after, hidden;
+    try {
+      before = readPin();
+      if (!before) throw Error('could not find the pin for ' + victim.description.slice(0, 40));
+      window.isDone = o => (o && o.id === victim.id ? true : real(o));
+      renderMarkers();
+      await wait(300);
+      after = readPin();
+      if (!after) throw Error('the pin disappeared when it was only meant to change');
+
+      // and the checkbox takes it off the map entirely
+      const box = $('layer-hide-done');
+      if (!box) throw Error('no Hide finished objectives control in Map layers');
+      box.checked = true;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(400);
+      hidden = readPin();
+      box.checked = false;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(300);
+    } finally {
+      window.isDone = real;
+      renderMarkers();
+    }
+
+    if (after.stroke === before.stroke)
+      throw Error(
+        'a finished objective is drawn in the same colour as an outstanding one: ' + after.stroke
+      );
+    // Compare the shape with the colours taken out. The glyph carries its own
+    // stroke colour, so a straight comparison passes the moment the colour
+    // changes and quietly stops testing the shape at all - written that way it
+    // reported 34/34 with the done glyph reverted to the verb it replaces.
+    const shapeOf = html => html.replace(/#[0-9a-f]{3,8}/gi, '#');
+    if (shapeOf(after.head) === shapeOf(before.head))
+      throw Error('a finished objective still shows the glyph for the work it wanted');
+    if (!(after.opacity < before.opacity))
+      throw Error(
+        'a finished objective is as loud as an outstanding one: ' +
+          after.opacity +
+          ' against ' +
+          before.opacity
+      );
+    if (!/already done/i.test(after.label))
+      throw Error('the label does not say it is done, so nothing but the picture does');
+    if (hidden) throw Error('Hide finished objectives left the finished pin on the map');
+
+    await resetToDefaults();
+    return (
+      before.stroke +
+      ' at ' +
+      before.opacity +
+      ' -> ' +
+      after.stroke +
+      ' at ' +
+      after.opacity +
+      ', and hidden on request'
+    );
+  });
+  await check('My Raid separates what has somewhere to go', async () => {
+    // 53 of 89 rows across this profile drew nothing on the map - kills,
+    // extractions, hand-ins - and sat mixed in with the ones that name a
+    // place. The split is only worth anything if it is exact, so this asserts
+    // the rule rather than the look.
+    await resetToDefaults();
+    let opened = null;
+    for (const id of ['lighthouse', 'customs', 'shoreline', 'reserve']) {
+      await openMap(id);
+      $('show-active').click();
+      await wait(900);
+      if (document.querySelectorAll('.raid-group').length >= 2) {
+        opened = id;
+        break;
+      }
+    }
+    if (!opened) throw Error('no map in this profile has both kinds of active quest to judge');
+
+    const groups = [...document.querySelectorAll('.raid-group')];
+    const seen = [];
+    for (const head of groups) {
+      const label = head.querySelector('.eyebrow').textContent;
+      const stated = Number(head.querySelector('.count').textContent);
+      // the cards that belong to this heading are the ones before the next
+      const cards = [];
+      let node = head.nextElementSibling;
+      while (node && !node.classList.contains('raid-group')) {
+        if (node.classList.contains('raid-quest-card')) cards.push(node);
+        node = node.nextElementSibling;
+      }
+      if (cards.length !== stated)
+        throw Error(label + ' says ' + stated + ' but has ' + cards.length + ' cards under it');
+      for (const c of cards) {
+        const hasPoints = !!c.querySelector('.raid-floor');
+        if (/PLACES TO GO/.test(label) && !hasPoints)
+          throw Error(
+            'a quest with no map point is under PLACES TO GO: ' +
+              c.querySelector('strong').textContent
+          );
+        if (/NO FIXED/.test(label) && hasPoints)
+          throw Error(
+            'a quest with map points is under NO FIXED LOCATION: ' +
+              c.querySelector('strong').textContent
+          );
+      }
+      seen.push(label + ' ' + stated);
+    }
+
+    // and the flag is never on a quest that also sends you somewhere else
+    for (const c of document.querySelectorAll('.raid-quest-card'))
+      if (c.querySelector('.raid-flag') && c.querySelector('.raid-elsewhere'))
+        throw Error(
+          '"' +
+            c.querySelector('strong').textContent +
+            '" is flagged CAN FINISH HERE and also needs another map'
+        );
+
+    const flags = document.querySelectorAll('.raid-flag').length;
+    document.querySelectorAll('dialog[open]').forEach(d => d.close());
+    await resetToDefaults();
+    return opened + ': ' + seen.join(', ') + ', ' + flags + ' can finish here';
+  });
   removeEventListener('error', onError);
   removeEventListener('unhandledrejection', onError);
   const failed = results.filter(r => !r.ok);

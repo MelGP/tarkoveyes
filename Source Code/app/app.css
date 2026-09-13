@@ -3084,3 +3084,169 @@ button.dashboard-progress:hover {
 button.dashboard-progress:hover span {
   color: var(--ink-1);
 }
+
+/* ==========================================================================
+   AN UNTRACKED QUEST DREW NOTHING AND SAID NOTHING
+   --------------------------------------------------------------------------
+   The map only shows quests the application has a record of, and a record only
+   exists where a log line happened to be read. So a task the game says is 3/4
+   done had an empty map and a select reading "Untracked" - a true word that
+   explains nothing and points at no fix. The line under the control names what
+   is missing and what to press, so it sits at the muted weight of a caption
+   rather than competing with the status it explains.
+   ========================================================================== */
+.progress-hint {
+  display: block;
+  margin: 8px 2px 0;
+  color: var(--ink-5);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+/* ==========================================================================
+   THE SAME FIVE GLYPHS IN THE LIST AND ON THE MAP
+   --------------------------------------------------------------------------
+   The map's pins say what you do at a point - find, go, mark, plant, kill -
+   and nothing would teach those five without a legend nobody would read. The
+   brief's objective rows carry the identical glyph beside the sentence it
+   stands for, so the list is the legend and the two views stop being separate
+   vocabularies for one quest.
+
+   It takes `currentColor`, so a done objective's glyph greys out with the text
+   it belongs to rather than staying bright over a struck-through line.
+   ========================================================================== */
+.objective-verb {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--ink-4);
+}
+.objective.done .objective-verb {
+  color: #788b86;
+}
+
+/* ==========================================================================
+   A FINISHED OBJECTIVE IS STILL A PLACE, JUST NOT ONE TO GO TO
+   --------------------------------------------------------------------------
+   Its pin is drawn in the completed green with a tick for a head, at about
+   four tenths opacity - quiet enough that the eye skips it, present enough
+   that you can still see the point exists and click it. The checkbox that
+   removes it entirely is the first row of Map layers, above the extracts,
+   because what you have left to do outranks the scenery.
+
+   The row takes the separator the other groups use, so it reads as its own
+   thing rather than as the first extract option.
+   ========================================================================== */
+.layer-objectives .icon {
+  color: var(--ink-3);
+}
+
+/* ==========================================================================
+   MY RAID SAYS WHICH OF IT HAS SOMEWHERE TO GO
+   --------------------------------------------------------------------------
+   Measured across this profile, 53 of 89 My Raid rows drew nothing on the map
+   at all - kill counts, extractions, hand-ins - and they sat mixed in with the
+   ones that name a place, so the glance before a raid was ten rows deep to
+   find the three that tell you where to go. On Lighthouse it was eleven of
+   seventeen.
+
+   Two groups now, the useful one first, each heading carrying its own count.
+   The group heading is a divider rather than a card: the cards under it are
+   the objects, and boxing a label around them would add an edge where nothing
+   changes - the same rule the sidebar pass settled on.
+   ========================================================================== */
+.raid-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 20px 2px 9px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.raid-group:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 16px;
+}
+.raid-group-note {
+  display: block;
+  margin: -4px 2px 11px;
+  color: var(--ink-6);
+  font-size: 10px;
+  line-height: 1.6;
+}
+/* `--live` means "this is happening now", and a quest you can close in this
+   raid is the closest thing in the panel to that, so it takes the accent and
+   nothing else in here does. Only drawn where it is true: a chip on every row
+   is wallpaper. */
+.raid-flag {
+  display: inline-block;
+  margin-top: 7px;
+  padding: 2px 6px;
+  border: 1px solid #e9b96955;
+  border-radius: var(--r-sm);
+  color: var(--live);
+  font: 700 8px Consolas, monospace;
+  letter-spacing: 1px;
+}
+.raid-elsewhere {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink-5);
+  font-size: 10px;
+}
+
+/* ==========================================================================
+   THE DRAWN LOGO
+   --------------------------------------------------------------------------
+   The user drew a mark for the application, so the hand-built `#eye-mark` in
+   icons.svg gives way to it in the topbar. The wordmark in the file is not
+   used there: the topbar already writes TARKOVEYES as live text, which stays
+   crisp at any size and which the responsive ladder drops on its own at
+   1000px, and two wordmarks side by side would be one too many.
+
+   Measured off the artwork, the eye is 867 by 410 - a shape no square crop
+   holds without swallowing the wordmark under it - so the mark keeps its own
+   2:1 and the box is wide rather than square. The chrome the old box carried
+   (gradient, border, inset highlight) goes: it existed to give a line-art
+   glyph somewhere to sit, and a drawn mark on its own ground needs no frame.
+   ========================================================================== */
+.brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.brand-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* The same glow the line-art mark had, so the brand keeps its weight against
+     the topbar rather than reading as a flat sticker. */
+  filter: drop-shadow(0 0 7px #e9b96933);
+}
+@media (max-width: 1250px) {
+  .brand-icon {
+    width: 48px;
+    height: 25px;
+  }
+}
+/* About is the one place the whole drawn logo belongs, wordmark and all: it is
+   the page that answers "what is this", and the file was made to say exactly
+   that. It keeps its own black ground because that is how it was drawn. */
+.about-logo {
+  display: block;
+  width: 132px;
+  height: 132px;
+  margin: 0 auto 6px;
+  object-fit: contain;
+  border-radius: var(--r-md);
+}

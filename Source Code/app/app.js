@@ -129,6 +129,49 @@ function status(q) {
   if (states.includes('active') || states.includes('completed')) return 'active';
   return states.includes('failed') ? 'failed' : 'untracked';
 }
+/* The map only draws quests the application knows you are on, and it only
+ * knows that from a log line it happened to be running for. Everything you
+ * accepted before installing it, or in a session whose logs have rotated
+ * away, is `untracked` - so the game says a task is 3/4 done and the map for
+ * it is empty, with nothing on screen saying why. The user reported it as
+ * "quests like these do not show".
+ *
+ * The catalogue can settle part of it without guessing. A quest records what
+ * has to be true of other quests before a trader offers it, so when every one
+ * of those is satisfied and the application still has no record of the quest,
+ * it is one you can be offered right now and it is not being shown anywhere.
+ * That is a fact about the data, not an assumption about the player - which
+ * is why it is a filter and a note, and never a status the application awards
+ * itself. Deciding you are on a quest you never took would be worse than the
+ * silence it replaces.
+ */
+function requirementMet(item) {
+  const dep = quests.find(q => q.id === item.taskId);
+  if (!dep) return false;
+  const state = status(dep);
+  return (item.statuses || ['complete']).some(want =>
+    want === 'complete'
+      ? state === 'completed'
+      : /* A quest unlocked while its predecessor was active stays unlocked
+           after the predecessor is handed in, so completed satisfies active. */
+        want === 'active'
+        ? state === 'active' || state === 'completed'
+        : state === want
+  );
+}
+function questAvailable(q) {
+  if (status(q) !== 'untracked') return false;
+  const needs = q.requirements || [];
+  /* A quest with no recorded prerequisite is gated on trader loyalty and
+     player level, neither of which is in any file this application reads, so
+     it is left out rather than claimed. */
+  return needs.length > 0 && needs.every(requirementMet);
+}
+function unlockedByNames(q) {
+  return (q.requirements || [])
+    .map(item => quests.find(dep => dep.id === item.taskId)?.name)
+    .filter(Boolean);
+}
 function source(q) {
   if (profile().questSources?.[q.id]) return profile().questSources[q.id];
   return (q.sourceQuestIds || []).some(id => profile().questSources?.[id] === 'logs')
@@ -272,6 +315,42 @@ function hiddenOnCurrentMap() {
 function visibleRaidQuests() {
   const hidden = hiddenOnCurrentMap();
   return activeMapQuests().filter(q => !hidden.has(q.id));
+}
+/* Renderer-only, the way Battle Pass category visibility is: it decides what
+   is drawn and nothing else, so putting it in progress.json would mean a new
+   key in the map-layers validator, a default in the profile shape and a
+   migration for everyone who already has a saved file - three places to get
+   wrong for a checkbox about drawing. */
+const hideDoneKey = 'tarkoveyes-hide-done-objectives-v1';
+let hideDoneObjectives = false;
+function loadHideDone() {
+  try {
+    hideDoneObjectives = localStorage.getItem(hideDoneKey) === '1';
+  } catch {
+    hideDoneObjectives = false;
+  }
+  const box = $('layer-hide-done');
+  if (box) box.checked = hideDoneObjectives;
+}
+function setHideDone(value) {
+  hideDoneObjectives = value;
+  try {
+    localStorage.setItem(hideDoneKey, value ? '1' : '0');
+  } catch {
+    /* a private window or blocked site data; the choice still holds for
+       this session, which is the part that matters on screen */
+  }
+  renderMarkers();
+  /* Every layer switch goes through saveLayers() so that the decluttering
+     runs after the map changes shape. This one does not touch the saved
+     layer settings, so it has to do that half itself. */
+  scheduleDeclutter();
+}
+function doneObjectivesOnMap() {
+  let total = 0;
+  for (const q of activeMapQuests())
+    for (const p of objectivePoints(q)) if (isDone(p.objective)) total++;
+  return total;
 }
 function questMarkerMeta(q) {
   const index = activeMapQuests().findIndex(item => item.id === q.id);
@@ -497,6 +576,7 @@ function renderList() {
       (!trader || q.traderName === trader) &&
       (filter === 'all' ||
         (filter === 'open' && status(q) !== 'completed') ||
+        (filter === 'available' && questAvailable(q)) ||
         /* the inverse of Untracked: anything you have started, finished or
            failed, which is what the Tracked quests bar counts */
         (filter === 'tracked' && status(q) !== 'untracked') ||
@@ -924,6 +1004,31 @@ function renderDetail() {
   };
   stateRow.append(select);
   head.append(stateRow);
+  /* An untracked quest draws nothing on the map, and until now nothing said
+     so - the map was simply empty and the select read "Untracked", which is a
+     true word that explains nothing. Say what is missing and what fixes it,
+     here, where the fix is. */
+  if (status(q) === 'untracked') {
+    const unlocks = questAvailable(q) ? unlockedByNames(q) : [];
+    const points = objectivePoints(q).length;
+    head.append(
+      el(
+        'small',
+        'progress-hint',
+        (unlocks.length ? 'Unlocked by ' + unlocks.join(' and ') + '. ' : '') +
+          'This app has no record that you have taken it on, so it is left off the map' +
+          (points
+            ? ' - set it Active to put its ' +
+              points +
+              ' point' +
+              (points === 1 ? '' : 's') +
+              ' on ' +
+              mapName(currentMapId) +
+              '.'
+            : '.')
+      )
+    );
+  }
   panel.append(head);
   const questKeys = questKeyList(q);
   if (questKeys.length) {
@@ -989,6 +1094,18 @@ function renderDetail() {
         toast('Could not save the objective.', 'error');
       }
     };
+    /* The same five glyphs the map draws, beside the sentence they stand for.
+       That is the legend: nobody has to be taught a magnifier once they have
+       seen it next to "Find and obtain", and the two views stop being two
+       separate vocabularies for one quest. */
+    const verb = objectiveVerb(o);
+    const mark = svg('svg', {
+      class: 'objective-verb',
+      viewBox: '-8 -8 16 16',
+      'aria-hidden': 'true'
+    });
+    for (const shape of verbGlyph(verb, 'currentColor')) mark.append(shape);
+    mark.appendChild(svg('title')).textContent = verbLabels[verb] || 'Objective';
     const body = el('div');
     body.append(el('p', '', o.description));
     if (o.optional) body.append(el('small', '', 'Optional objective'));
@@ -1058,7 +1175,7 @@ function renderDetail() {
         );
       body.append(counter);
     }
-    row.append(check, body);
+    row.append(check, mark, body);
     section.append(row);
   });
   panel.append(section);
@@ -1244,7 +1361,261 @@ function markerScale() {
   if (!mapSvgBox) mapSvgBox = $('map-svg').getBoundingClientRect();
   return Math.max(view.w / mapSvgBox.width, view.h / mapSvgBox.height);
 }
-function makeMarker(p, label, color, shape = 'extract', candidate = false, number = null) {
+/* A count is a circle. An objective is a pin. And the pin says what you do
+ * there.
+ *
+ * Three different meanings were all drawn as a ring with a number in it -
+ * which quest this is, how many objectives are stacked on this spot, and how
+ * many loot points are nearby - so on Woods with the Valuables preset the
+ * quest you opened the map for was indistinguishable from a pile of
+ * screwdrivers behind it. The user reported it by pointing at two of them and
+ * saying one is a quest and the other is not.
+ *
+ * The shape carries the meaning now. A pin is somewhere you are going, and
+ * its tip is the coordinate, which is also more honest than a circle centred
+ * on it. Everything that counts something keeps its circle.
+ *
+ * What went in the head is the more useful half. The number that used to sit
+ * there was an index into My Raid, so it meant nothing at all unless that
+ * panel happened to be open - while the thing the map could never tell you,
+ * and that you go to the map for, is what the point is *for*. Counted over
+ * every mapped objective in the catalogue, seven verbs cover all 964 points:
+ * find 40%, visit 26%, plant 19%, mark 12%, shoot 2%, and nine stragglers -
+ * eight signal flares and one extraction - that turned out to be two more
+ * verbs rather than a remainder. So the glyph is the verb, the colour is
+ * which quest, and the number moved to a badge. The dot is a fallback that
+ * nothing in the bundled data reaches.
+ *
+ * The glyphs are not meant to be learned from a legend - the quest brief's
+ * objective rows carry the same five, so the map and the list teach each
+ * other. Keep them in step if either changes.
+ *
+ * The one other teardrop on the map is the user's own marker, and it is
+ * deliberately unlike this one: a solid magenta drop with a hole punched in
+ * it, centred on its point rather than standing on it. Do not give a third
+ * layer a pin - the whole value here is that the silhouette is the answer.
+ */
+const questPinPath = 'M0 0 C-3 -6.9 -11 -11.6 -11 -20 A11 11 0 1 1 11 -20 C11 -11.6 3 -6.9 0 0 Z';
+const objectiveVerbs = {
+  findQuestItem: 'find',
+  findItem: 'find',
+  visit: 'visit',
+  mark: 'mark',
+  plantItem: 'plant',
+  plantQuestItem: 'plant',
+  shoot: 'shoot',
+  /* Every mapped `useItem` in all three catalogues is a signal flare - eight
+     of them, from Airmail to the four in The Price of Independence - which is
+     why the glyph is a flare rather than a generic "use something". If a
+     catalogue refresh ever brings a useItem that is not a flare the glyph
+     overstates it, though the objective text in the popup still says what it
+     really is. Re-check with tools/ if that day comes. */
+  useItem: 'signal',
+  extract: 'extract'
+};
+const verbLabels = {
+  find: 'Pick something up here',
+  visit: 'Go and look here',
+  mark: 'Place a marker here',
+  plant: 'Leave something here',
+  shoot: 'Something to kill here',
+  signal: 'Fire a signal flare here',
+  extract: 'Leave the raid here',
+  /* Not a verb but a state, and it belongs in the same table because it is
+     drawn in the same place and has to be as distinct from the seven as they
+     are from each other. */
+  done: 'Already done'
+};
+function objectiveVerb(objective) {
+  return objectiveVerbs[objective && objective.type] || 'other';
+}
+/* Drawn in a box of about eleven units centred on the origin, so the caller
+   places it and never has to know what a glyph is. Two to four strokes each:
+   at the size a marker actually renders, a fifth stroke is a smudge. */
+function verbGlyph(verb, color) {
+  const line = (x1, y1, x2, y2) =>
+    svg('line', {
+      x1,
+      y1,
+      x2,
+      y2,
+      stroke: color,
+      'stroke-width': 1.7,
+      'stroke-linecap': 'round'
+    });
+  const stroke = (tag, attrs) =>
+    svg(tag, {
+      ...attrs,
+      fill: 'none',
+      stroke: color,
+      'stroke-width': 1.7,
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round'
+    });
+  switch (verb) {
+    case 'find':
+      // a magnifier: there is an item here and you have to look for it
+      return [stroke('circle', { cx: -1.1, cy: -1.1, r: 3.9 }), line(1.8, 1.8, 4.7, 4.7)];
+    case 'visit':
+      // an eye: go and look, nothing to carry
+      return [
+        stroke('path', { d: 'M-5.6 0 Q0 -4.4 5.6 0 Q0 4.4 -5.6 0 Z' }),
+        svg('circle', { cx: 0, cy: 0, r: 1.7, fill: color })
+      ];
+    case 'mark':
+      // a beacon: a marker you had to bring, planted, transmitting
+      return [
+        svg('circle', { cx: 0, cy: 3.1, r: 1.8, fill: color }),
+        stroke('path', { d: 'M-3.1 0.4 A4 4 0 0 1 3.1 0.4' }),
+        stroke('path', { d: 'M-5.5 -2.4 A7 7 0 0 1 5.5 -2.4' })
+      ];
+    case 'plant':
+      // down onto a shelf: you are leaving something behind
+      return [
+        line(0, -5.2, 0, 1.4),
+        stroke('polyline', { points: '-2.7,-1.4 0,1.6 2.7,-1.4' }),
+        line(-4.4, 4.3, 4.4, 4.3)
+      ];
+    case 'shoot':
+      // a crosshair, the one glyph nobody has to be taught
+      return [
+        stroke('circle', { cx: 0, cy: 0, r: 3.4 }),
+        line(0, -6, 0, -4.4),
+        line(0, 4.4, 0, 6),
+        line(-6, 0, -4.4, 0),
+        line(4.4, 0, 6, 0)
+      ];
+    case 'signal':
+      // up, and a spark at the top: a flare is the one thing on this map you
+      // send away from yourself rather than go to
+      /* Eight rays off an empty centre. This was an up arrow with sparks over
+         it first, and the two merged into a smudge at the size a marker really
+         draws - the user asked what the icon was, which is the answer. A
+         starburst has nothing to merge with: it degrades into a blob that is
+         still recognisably a blob of rays. The centre stays empty so it cannot
+         be read as the crosshair, which is a ring with a dot's worth of solid
+         in the middle. */
+      return [
+        line(0, -6.2, 0, -2.2),
+        line(0, 2.2, 0, 6.2),
+        line(-6.2, 0, -2.2, 0),
+        line(6.2, 0, 2.2, 0),
+        line(-4.4, -4.4, -1.6, -1.6),
+        line(4.4, 4.4, 1.6, 1.6),
+        line(-4.4, 4.4, -1.6, 1.6),
+        line(4.4, -4.4, 1.6, -1.6)
+      ];
+    case 'extract':
+      // the same arrow the extract layer draws, because it is the same idea
+      // and a second vocabulary for one thing is what this change is undoing
+      return [
+        /* Pulled down-left off the number badge, which sits on the same
+           shoulder this arrow points at. */
+        line(-4.4, 4.4, 2.6, -2.6),
+        stroke('polyline', { points: '-0.4,-2.6 2.6,-2.6 2.6,0.4' })
+      ];
+    case 'done':
+      // a tick: what you were supposed to do here stops mattering once you
+      // have done it, so the verb gives way rather than being decorated
+      return [stroke('polyline', { points: '-5,0.2 -1.6,3.8 5.2,-3.4' })];
+    default:
+      return [svg('circle', { cx: 0, cy: 0, r: 2.6, fill: color })];
+  }
+}
+function questPin(g, color, candidate, number, stacked, verb) {
+  /* The ground shadow is what stops a pin floating: without it the tip reads
+     as the bottom of a balloon rather than as the spot itself. */
+  g.append(svg('ellipse', { cx: 0, cy: 1.2, rx: 5, ry: 1.9, fill: '#000', opacity: '.42' }));
+  /* A stack of pins, not one pin with a bigger number. Two objectives on one
+     spot and quest number two would otherwise both be a pin reading "2" - the
+     same collision this change exists to end, moved one layer in. Fanning two
+     more silhouettes behind it makes the silhouette itself say "several",
+     which survives being 14 pixels tall in a way a glyph would not. */
+  if (stacked)
+    for (const shift of ['translate(-8 -2.8) scale(.78)', 'translate(8 -2.8) scale(.78)'])
+      g.append(
+        svg('path', {
+          d: questPinPath,
+          transform: shift,
+          fill: '#0e1719',
+          'fill-opacity': '.95',
+          stroke: color,
+          'stroke-width': 2.6,
+          'stroke-opacity': '.62',
+          'stroke-linejoin': 'round'
+        })
+      );
+  g.append(
+    svg('path', {
+      d: questPinPath,
+      fill: '#0e1719',
+      'fill-opacity': '.96',
+      stroke: color,
+      'stroke-width': 2,
+      'stroke-linejoin': 'round',
+      /* A possible location is one of several the quest might use, so its
+         outline is broken - the same language the old marker used. */
+      'stroke-dasharray': candidate ? '3.5 3' : ''
+    })
+  );
+  g.append(svg('circle', { cx: 0, cy: -20, r: 7.6, fill: color, 'fill-opacity': '.15' }));
+  g.append(svg('circle', { cx: 0, cy: 0, r: 1.8, fill: color }));
+  if (stacked) {
+    /* Several objectives on one spot can be several different verbs, so the
+       head shows how many rather than picking one of them to stand for all. */
+    const t = svg('text', {
+      x: 0,
+      y: -16.4,
+      fill: color,
+      'font-size': String(number).length > 1 ? 9 : 11,
+      'font-weight': 700,
+      'text-anchor': 'middle'
+    });
+    t.textContent = number;
+    g.append(t);
+    return g;
+  }
+  const head = svg('g', { transform: 'translate(0 -20)' });
+  for (const shape of verbGlyph(verb, color)) head.append(shape);
+  g.append(head);
+  /* The quest number is a badge on the shoulder rather than the head, because
+     a numeral in the middle of a marker is exactly what every count on this
+     map looks like. On a badge it reads as an identity, which is what it is:
+     the figure beside the matching card in My Raid. A quest that is not in
+     that list has no index, and then it has no badge either. */
+  if (number == null) return g;
+  g.append(
+    svg('circle', {
+      cx: 9.4,
+      cy: -27.6,
+      r: 6.4,
+      fill: '#0e1719',
+      'fill-opacity': '.97',
+      stroke: color,
+      'stroke-width': 1.6
+    })
+  );
+  const badge = svg('text', {
+    x: 9.4,
+    y: -25.2,
+    fill: color,
+    'font-size': String(number).length > 1 ? 6.4 : 7.8,
+    'font-weight': 700,
+    'text-anchor': 'middle'
+  });
+  badge.textContent = number;
+  g.append(badge);
+  return g;
+}
+function makeMarker(
+  p,
+  label,
+  color,
+  shape = 'extract',
+  candidate = false,
+  number = null,
+  verb = 'other'
+) {
   const pt = point(p),
     s = markerScale();
   const g = svg('g', {
@@ -1255,42 +1626,9 @@ function makeMarker(p, label, color, shape = 'extract', candidate = false, numbe
     role: 'button',
     'aria-label': label
   });
-  if (shape === 'cluster') {
-    g.append(svg('circle', { r: 17, fill: '#151d20', stroke: '#f4c980', 'stroke-width': 2 }));
-    g.append(svg('circle', { r: 13, fill: '#574725', 'fill-opacity': '.55' }));
-    const t = svg('text', {
-      x: 0,
-      y: 3.3,
-      fill: '#f4c980',
-      'font-size': number > 9 ? 7 : 9,
-      'font-weight': 700,
-      'text-anchor': 'middle'
-    });
-    t.textContent = number;
-    g.append(t);
-  } else if (shape === 'quest') {
-    g.append(
-      svg('circle', {
-        r: 14,
-        fill: color,
-        'fill-opacity': '.13',
-        stroke: color,
-        'stroke-width': 1,
-        'stroke-dasharray': candidate ? '3 3' : ''
-      })
-    );
-    g.append(svg('circle', { r: 9, fill: '#172020', stroke: color, 'stroke-width': 2 }));
-    const t = svg('text', {
-      x: 0,
-      y: 3.2,
-      fill: color,
-      'font-size': number && number > 9 ? 7 : 9,
-      'font-weight': 700,
-      'text-anchor': 'middle'
-    });
-    t.textContent = number || '•';
-    g.append(t);
-  } else {
+  if (shape === 'cluster') questPin(g, color, false, number, true, null);
+  else if (shape === 'quest') questPin(g, color, candidate, number, false, verb);
+  else {
     g.append(
       svg('rect', {
         x: -10,
@@ -1417,6 +1755,9 @@ function renderMarkers() {
     clusters = [];
   for (const q of shown)
     for (const p of objectivePoints(q)) {
+      /* Dropped here rather than at drawing time so the cluster counts are
+         about what is left to do, not about what used to be here. */
+      if (hideDoneObjectives && isDone(p.objective)) continue;
       const projected = point(p),
         cluster = clusters.find(
           item =>
@@ -1432,16 +1773,24 @@ function renderMarkers() {
       ).values()
     ];
     if (unique.length > 1) {
-      const g = makeMarker(
+      const finished = unique.filter(entry => isDone(entry.p.objective)).length,
+        allFinished = finished === unique.length,
+        g = makeMarker(
           unique[0].p,
-          unique.length + ' overlapping quest objectives',
-          '#f4c980',
+          unique.length +
+            ' overlapping quest objectives' +
+            (finished ? ' (' + finished + ' already done)' : ''),
+          allFinished ? doneColor : '#f4c980',
           'cluster',
           false,
           unique.length
         ),
         floors = unique.map(entry => floorFor(entry.p));
-      g.setAttribute('opacity', floors.includes(floor) ? '1' : '.55');
+      if (allFinished) g.dataset.done = 1;
+      g.setAttribute(
+        'opacity',
+        allFinished ? (floors.includes(floor) ? '.4' : '.26') : floors.includes(floor) ? '1' : '.55'
+      );
       g.onclick = e => {
         e.stopPropagation();
         showQuestCluster(unique);
@@ -1457,20 +1806,33 @@ function renderMarkers() {
     }
     const { q, p } = cluster.entries[0],
       meta = questMarkerMeta(q),
-      color = meta.number ? meta.color : isDone(p.objective) ? '#82c7a7' : '#f4c980',
+      /* isDone used to be consulted only when the quest was NOT in My Raid -
+         which is exactly when you are not working on it. For the quests you
+         are actually on, a finished objective drew the identical pin, and the
+         map went on pointing at places you had already been. */
+      finished = isDone(p.objective),
+      color = finished ? doneColor : meta.number ? meta.color : '#f4c980',
+      verb = finished ? 'done' : objectiveVerb(p.objective),
       g = makeMarker(
         p,
         (meta.number ? 'Quest ' + meta.number + ': ' : '') +
           q.name +
           ' — ' +
-          p.objective.description,
+          p.objective.description +
+          /* The glyph is the whole point of the head, so anything that reads
+             the label rather than the picture has to be told the same thing. */
+          (verbLabels[verb] ? ' (' + verbLabels[verb].toLowerCase() + ')' : ''),
         color,
         'quest',
         p.candidate,
-        meta.number
+        meta.number,
+        verb
       ),
       f = floorFor(p);
-    g.setAttribute('opacity', floor === f ? '1' : '.55');
+    /* Quiet, not gone. Hiding it by default would lose the fact that the
+       point is there at all, and the checkbox is for people who want that. */
+    if (finished) g.dataset.done = 1;
+    g.setAttribute('opacity', finished ? (floor === f ? '.4' : '.26') : floor === f ? '1' : '.55');
     g.onclick = e => {
       e.stopPropagation();
       selectQuest(q);
@@ -1816,6 +2178,10 @@ const markerRanks = [
 ];
 // Extracts share a layer with quest objectives but not their importance.
 const wayoutRank = 7;
+// And an objective you have already finished has less than either.
+const doneRank = 9;
+// One green for finished work, the same the quest brief strikes a line in.
+const doneColor = '#82c7a7';
 let declutterFrame = 0,
   declutterAgain = 0;
 function scheduleDeclutter() {
@@ -1848,7 +2214,17 @@ function declutterMarkers() {
     const kind = node.dataset.kind;
     candidates.push({
       node,
-      rank: id === 'markers' && kind !== 'quest' && kind !== 'cluster' ? wayoutRank : rank,
+      /* A finished objective is still drawn, so it still has a box, and a box
+         that wins a spot pushes an outstanding objective aside - the opposite
+         of the point. It ranks below the extracts it shares a layer with. */
+      rank:
+        id === 'markers'
+          ? node.dataset.done
+            ? doneRank
+            : kind !== 'quest' && kind !== 'cluster'
+              ? wayoutRank
+              : rank
+          : rank,
       x: box.x + box.width / 2,
       y: box.y + box.height / 2,
       reach: Math.max(box.width, box.height) / 2
@@ -2816,6 +3192,37 @@ function focusRaid(list) {
   applyFloor(baseFloor());
   setView();
 }
+/* Which of the active quests on this map actually send you somewhere.
+ *
+ * Measured across this profile, 53 of 89 My Raid rows - 60% - draw nothing
+ * on the map at all: kill counts, extractions, hand-ins. They are correctly
+ * active and worth knowing about, but they sat mixed in with the ones that
+ * name a place, so the glance you take before a raid was ten rows deep to
+ * find the three that tell you where to go. On Lighthouse it was eleven of
+ * seventeen.
+ */
+function questHasPointsHere(q) {
+  return objectivePoints(q).length > 0;
+}
+/* And of the ones that do: can this quest be finished without going
+ * anywhere else? A quest is answered here when no objective it still needs
+ * demands a different map. On Streets that is one quest in six, which is
+ * the sort of thing you want to know before you load in rather than after.
+ *
+ * An objective with no mapIds at all is unconstrained - "survive and
+ * extract", "hand over to the trader" - so it never blocks. An optional one
+ * does not block either, by definition.
+ */
+function elsewhereMaps(q) {
+  const needed = new Set();
+  for (const o of q.objectives) {
+    if (o.optional || isDone(o)) continue;
+    const ids = o.mapIds || [];
+    if (!ids.length || ids.includes(currentMapId)) continue;
+    for (const id of ids) if (mapDefinitions.some(m => m.id === id)) needed.add(id);
+  }
+  return [...needed];
+}
 function renderMyRaid(focus = false) {
   const currentName = mapName(currentMapId),
     active = activeMapQuests(),
@@ -2827,11 +3234,17 @@ function renderMyRaid(focus = false) {
   panel.replaceChildren();
   const box = el('div', 'active-summary');
   box.append(el('span', 'eyebrow', 'MY RAID'), el('h2', '', active.length + ' on ' + currentName));
+  const goCount = active.filter(questHasPointsHere).length;
   box.append(
     el(
       'p',
       'raid-stats',
-      visible.length + ' shown · ' + pts.length + ' map point' + (pts.length === 1 ? '' : 's')
+      goCount +
+        ' with somewhere to go · ' +
+        pts.length +
+        ' map point' +
+        (pts.length === 1 ? '' : 's') +
+        (visible.length === active.length ? '' : ' · ' + visible.length + ' shown')
     )
   );
   if (!active.length)
@@ -2846,9 +3259,15 @@ function renderMyRaid(focus = false) {
     );
   if (active.length)
     box.append(el('p', 'raid-help', 'Use each checkbox to show or hide that quest on the map.'));
-  active.forEach(q => {
+  /* Two groups, the useful one first. The heading carries the count so the
+     split is readable without counting rows, and the second group says what
+     its quests are rather than what they are not - "no fixed map point" on
+     every row told you the same thing eleven times. */
+  const goSomewhere = active.filter(questHasPointsHere),
+    ticksUp = active.filter(q => !questHasPointsHere(q));
+  const card = q => {
     const meta = questMarkerMeta(q),
-      card = el('div', 'raid-quest-card' + (hidden.has(q.id) ? ' muted-card' : '')),
+      row = el('div', 'raid-quest-card' + (hidden.has(q.id) ? ' muted-card' : '')),
       toggle = el('input');
     toggle.type = 'checkbox';
     toggle.checked = !hidden.has(q.id);
@@ -2868,25 +3287,59 @@ function renderMyRaid(focus = false) {
     open.append(el('strong', '', q.name), el('small', '', q.traderName));
     const floors = [...new Set(objectivePoints(q).map(p => floorFor(p)))].map(floorName);
     const points = objectivePoints(q).length;
-    open.append(
-      el(
-        'small',
-        'raid-floor',
-        points
-          ? points +
-              ' map point' +
-              (points === 1 ? '' : 's') +
-              (floors.length ? ' · ' + floors.join(', ') : '')
-          : 'No fixed map point'
-      )
-    );
+    /* Under a heading that already reads NO FIXED LOCATION, a line on every
+       row saying "No fixed map point" is the same sentence eleven times. The
+       group says it once; the row says where to go, or nothing. */
+    if (points)
+      open.append(
+        el(
+          'small',
+          'raid-floor',
+          points +
+            ' map point' +
+            (points === 1 ? '' : 's') +
+            (floors.length ? ' · ' + floors.join(', ') : '')
+        )
+      );
     open.onclick = () => {
       selectQuest(q);
       if (points) focusQuest(q);
     };
-    card.append(toggle, number, open);
-    box.append(card);
-  });
+    /* The one thing the map cannot tell you by drawing: whether finishing
+       this quest means coming back on another map. Only said where it is
+       true - a chip on every row would be wallpaper. */
+    const elsewhere = elsewhereMaps(q);
+    if (points && !elsewhere.length) open.append(el('span', 'raid-flag', 'CAN FINISH HERE'));
+    else if (elsewhere.length)
+      open.append(
+        el(
+          'small',
+          'raid-elsewhere',
+          /* Two names is a plan; seven is noise. "Is This a Reference?" wants a
+             camera on every map in the game, and spelling all seven out told
+             you less than the count does. */
+          elsewhere.length > 2
+            ? 'Also needs ' + elsewhere.length + ' other maps'
+            : 'Also needs ' + elsewhere.map(mapName).join(' and ')
+        )
+      );
+    row.append(toggle, number, open);
+    return row;
+  };
+  const group = (label, list, note) => {
+    if (!list.length) return;
+    const head = el('div', 'raid-group');
+    head.append(el('span', 'eyebrow', label), el('span', 'count', String(list.length)));
+    box.append(head);
+    if (note) box.append(el('small', 'raid-group-note', note));
+    for (const q of list) box.append(card(q));
+  };
+  group('PLACES TO GO', goSomewhere);
+  group(
+    'NO FIXED LOCATION',
+    ticksUp,
+    'Kills, extractions and hand-ins. They count while you play, so there is nothing to walk to.'
+  );
   panel.append(box);
   const kit = raidKit(visible);
   if (kit.keys.length || kit.carry.length) {
@@ -3004,6 +3457,12 @@ function updateHazardCounts() {
       : '';
 }
 function updateLayerCounts() {
+  const doneCount = $('done-objective-count');
+  if (doneCount) {
+    const total = doneObjectivesOnMap();
+    doneCount.textContent = total;
+    doneCount.hidden = !total;
+  }
   updateHazardCounts();
   renderBattlepass();
   const pmc = allPois.filter(
@@ -5150,6 +5609,7 @@ async function start() {
     ...hazardKinds.map(kind => [kind.control, kind.key])
   ])
     $(id).checked = !!data.settings.mapLayers[key];
+  loadHideDone();
   updateLayerChildren();
   [
     mapDefinitions,
@@ -5331,6 +5791,8 @@ async function start() {
     renderLandmarks();
     saveLayers();
   };
+  const hideDone = $('layer-hide-done');
+  if (hideDone) hideDone.onchange = () => setHideDone(hideDone.checked);
   $('layer-custom').onchange = () => {
     renderCustomMarkers();
     saveLayers();
@@ -5450,6 +5912,19 @@ async function start() {
           confirmed: item.confirmed,
           source: 'ocr'
         });
+      /* The Tasks screen only lists tasks you are on, so a quest this scan
+         just recorded progress for is one you have taken - and leaving it
+         `untracked` kept it off the map anyway, which is most of the reason
+         the map looked empty for quests the game says are half done. Only
+         untracked is promoted: a completed or failed record is a stronger
+         statement than a reading of a screenshot and is left alone. */
+      const started = [];
+      for (const id of new Set(chosen.map(item => item.questId))) {
+        const q = quests.find(item => item.id === id);
+        if (!q || status(q) !== 'untracked') continue;
+        await changeProgress({ type: 'quest', id, value: 'active' });
+        started.push(q.name);
+      }
       $('scan-dialog').close();
       if (selected) renderDetail();
       renderList();
@@ -5458,7 +5933,14 @@ async function start() {
         chosen.length +
           ' objective update' +
           (chosen.length === 1 ? '' : 's') +
-          ' applied. Completed steps are confirmed; partial counts remain reviewable.'
+          ' applied. Completed steps are confirmed; partial counts remain reviewable.' +
+          (started.length
+            ? ' ' +
+              started.length +
+              ' quest' +
+              (started.length === 1 ? ' is' : 's are') +
+              ' now on the map.'
+            : '')
       );
     } catch (e) {
       toast('Could not apply the scan: ' + e.message, 'error');
