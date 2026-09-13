@@ -74,7 +74,7 @@ async function decodePixels(bytes) {
 
 async function fetchSignature(id) {
   const response = await fetch('https://assets.tarkov.dev/' + id + '-grid-image.webp', {
-    headers: { 'user-agent': 'RaidNotes appearance builder' },
+    headers: { 'user-agent': 'TarkovEyes appearance builder' },
     signal: AbortSignal.timeout(20000)
   });
   if (!response.ok) return null;

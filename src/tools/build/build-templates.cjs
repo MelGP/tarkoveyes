@@ -30,7 +30,7 @@ const check = process.argv.includes('--check');
 const all = process.argv.includes('--all');
 const concurrency = 8;
 require('node:fs').mkdirSync(
-  require('node:path').join(require('node:os').tmpdir(), 'raid-notes-grid-artwork'),
+  require('node:path').join(require('node:os').tmpdir(), 'tarkoveyes-grid-artwork'),
   { recursive: true }
 );
 
@@ -97,7 +97,7 @@ async function decode(bytes, width, height) {
 // The artwork is kept on disk between runs. Re-packing at a different sample
 // size or with different overlay bands is then instant instead of another
 // twenty minutes of downloading.
-const artwork = path.join(require('node:os').tmpdir(), 'raid-notes-grid-artwork');
+const artwork = path.join(require('node:os').tmpdir(), 'tarkoveyes-grid-artwork');
 async function fetchArtwork(id) {
   const file = path.join(artwork, id + '.webp');
   try {
@@ -105,7 +105,7 @@ async function fetchArtwork(id) {
     if (bytes.length >= 200) return bytes;
   } catch {}
   const response = await fetch('https://assets.tarkov.dev/' + id + '-grid-image.webp', {
-    headers: { 'user-agent': 'RaidNotes template builder' },
+    headers: { 'user-agent': 'TarkovEyes template builder' },
     signal: AbortSignal.timeout(20000)
   });
   if (!response.ok) return null;

@@ -1,6 +1,6 @@
 const fs = require('node:fs'),
   path = require('node:path');
-const appRoot = path.resolve(__dirname, '../../dist/RaidNotes-win32-x64/resources/app'),
+const appRoot = path.resolve(__dirname, '../../dist/TarkovEyes-win32-x64/resources/app'),
   fromApp = name => require.resolve(name, { paths: [appRoot] });
 const { createWorker, OEM } = require(fromApp('tesseract.js')),
   language = require(fromApp('@tesseract.js-data/eng'));

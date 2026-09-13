@@ -16,7 +16,7 @@ const path = require('node:path');
 const os = require('node:os');
 const root = path.resolve(__dirname, '../..');
 const dataDir = path.join(root, 'app/data');
-const progressFile = path.join(os.homedir(), 'AppData/Roaming/RaidNotes/local-data/progress.json');
+const progressFile = path.join(os.homedir(), 'AppData/Roaming/TarkovEyes/local-data/progress.json');
 
 const catalogs = [
   { mode: 'pvp', file: 'quests.json', dump: 'regular' },

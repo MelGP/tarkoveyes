@@ -4,7 +4,7 @@ const { modeSlugs, normalizeItemPayload } = require('../../items.cjs');
 
 async function get(pathname) {
   const response = await fetch('https://json.tarkov.dev/' + pathname, {
-    headers: { accept: 'application/json', 'user-agent': 'RaidNotes item snapshot builder' }
+    headers: { accept: 'application/json', 'user-agent': 'TarkovEyes item snapshot builder' }
   });
   if (!response.ok) throw Error(pathname + ' returned HTTP ' + response.status);
   const text = await response.text();

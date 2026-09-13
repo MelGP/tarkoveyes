@@ -11,7 +11,7 @@ async function json(url) {
 function itemName(names, id) {
   return names[id + ' Name'] || names[id + ' name'] || id;
 }
-// tarkov.dev keeps separate ids for map variants; Raid Notes bundles one map for each.
+// tarkov.dev keeps separate ids for map variants; TarkovEyes bundles one map for each.
 const mapAliases = {
   'night-factory': 'factory',
   'ground-zero-21': 'ground-zero',

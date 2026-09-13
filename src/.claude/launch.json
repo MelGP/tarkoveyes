@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "raid-notes-preview",
+      "name": "tarkoveyes-preview",
       "runtimeExecutable": "node",
       "runtimeArgs": ["preview.cjs"],
       "port": 4318

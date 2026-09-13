@@ -160,13 +160,46 @@ function requirementMet(item) {
         : state === want
   );
 }
-function questAvailable(q) {
-  if (status(q) !== 'untracked') return false;
+/* The highest level gate among the quests you have taken on or finished. You
+   cannot hold a quest you were too low for, so this is a floor the catalogue
+   proves rather than a number anyone had to type. Measured on this profile it
+   reads 38, from Bullshit being active. */
+function provenLevel() {
+  let floor = 0;
+  for (const q of quests) {
+    const state = status(q);
+    if ((state === 'completed' || state === 'active') && (q.minPlayerLevel || 0) > floor)
+      floor = q.minPlayerLevel;
+  }
+  return floor;
+}
+/* Why a quest is offered, or the empty string when it is not. Two honest
+   reasons, and they are different claims:
+     'prerequisites'  every quest it waits on is in the state it wants
+     'nothing known'  it waits on no quest, and its level gate is behind you */
+function availableBecause(q) {
+  if (status(q) !== 'untracked') return '';
+  /* Story chapters and the Battle Pass tracker are this application's own
+     groupings, not something a trader hands you, so "available now" is not a
+     question about them. They carry a category and the 492 real quests carry
+     none, which is what makes this a test rather than a name match. Without
+     it they sail in: no prerequisites and no level gate is exactly their
+     shape, and all 11 appeared the first time this ran. */
+  if (q.category) return '';
+  if ((q.minPlayerLevel || 0) > provenLevel()) return '';
   const needs = q.requirements || [];
-  /* A quest with no recorded prerequisite is gated on trader loyalty and
-     player level, neither of which is in any file this application reads, so
-     it is left out rather than claimed. */
-  return needs.length > 0 && needs.every(requirementMet);
+  if (needs.length) return needs.every(requirementMet) ? 'prerequisites' : '';
+  /* A quest with no prerequisite used to be dropped here, on the grounds that
+     it was gated on trader loyalty and player level. Half of that was wrong:
+     43 of this profile's 72 such quests carry no level gate at all, and the
+     level gate on the rest is now checked against provenLevel(). What is left
+     is loyalty - and no bundled file records loyalty for ANY quest, including
+     the ones this function has always returned. Dropping these for a reason
+     that was never applied to the others was inconsistent, not careful. */
+  return 'nothing known';
+}
+function questAvailable(q) {
+  return availableBecause(q) !== '';
 }
 function unlockedByNames(q) {
   return (q.requirements || [])
@@ -1118,13 +1151,28 @@ function renderDetail() {
      true word that explains nothing. Say what is missing and what fixes it,
      here, where the fix is. */
   if (status(q) === 'untracked') {
-    const unlocks = questAvailable(q) ? unlockedByNames(q) : [];
+    const because = availableBecause(q);
+    const unlocks = because === 'prerequisites' ? unlockedByNames(q) : [];
     const points = objectivePoints(q).length;
+    /* Two different claims, so two different sentences. "Unlocked by X" is a
+       proof; "nothing recorded is holding it back" is the absence of one, and
+       saying the first about the second would be inventing evidence. */
+    const why = unlocks.length
+      ? 'Unlocked by ' + unlocks.join(' and ') + '. '
+      : because === 'nothing known'
+        ? 'Waits on no other quest' +
+          (q.minPlayerLevel
+            ? /* "past" is wrong at the boundary, and the boundary is the
+                 common case: the proven floor IS some quest's gate. */
+              ' and wants level ' + q.minPlayerLevel + ', which you have reached'
+            : '') +
+          ', so nothing recorded here is holding it back. '
+        : '';
     head.append(
       el(
         'small',
         'progress-hint',
-        (unlocks.length ? 'Unlocked by ' + unlocks.join(' and ') + '. ' : '') +
+        why +
           'This app has no record that you have taken it on, so it is left off the map' +
           (points
             ? ' - set it Active to put its ' +
@@ -4643,16 +4691,23 @@ function renderDashboard() {
   }
   content.append(history);
 }
+/* The dashboard's "Ready to start" and the Available now filter are the same
+   question, and they used to answer it with two different functions that
+   disagreed - 103 against 20 on this profile. This one had its own rules and
+   all of them were looser:
+     - `[].every()` is true, so quests with no prerequisite passed silently,
+       which is where most of the 103 came from;
+     - it never looked at `minPlayerLevel`, so it offered quests gated above
+       the level the catalogue proves you have;
+     - it never looked at `category`, so Story chapters and the Battle Pass
+       tracker were in it;
+     - and it accepted only `completed`, missing the requirements that want a
+       predecessor `active` or `failed`, which requirementMet handles.
+   One derivation now. The sort is the part worth keeping: shallowest chain
+   first, so a route's opening quest leads. */
 function readyToStart() {
-  const done = id => profile().quests[id] === 'completed';
   return quests
-    .filter(q => {
-      if (status(q) !== 'untracked') return false;
-      return (q.requirements || []).every(req => {
-        const id = requirementId(req);
-        return !id || done(id);
-      });
-    })
+    .filter(questAvailable)
     .sort((a, b) => (a.chainDepth ?? 99) - (b.chainDepth ?? 99) || a.name.localeCompare(b.name));
 }
 function mapWorkload() {
@@ -4711,10 +4766,23 @@ function renderNextSteps(content) {
   }
   const panel = dashboardPanel(
     'Ready to start',
+    /* "have every prerequisite completed" was true when this only listed
+       quests that had prerequisites. Most of them now have none at all, and
+       claiming a proof for those would be inventing one - so say which is
+       which. */
     ready.length +
       ' quest' +
       (ready.length === 1 ? '' : 's') +
-      ' have every prerequisite completed and are not tracked yet.'
+      ' nothing recorded is holding back' +
+      (() => {
+        const proven = ready.filter(q => availableBecause(q) === 'prerequisites').length;
+        const free = ready.length - proven;
+        if (!proven || !free) return '';
+        return (
+          ': ' + proven + ' with every prerequisite done, ' + free + ' waiting on no other quest'
+        );
+      })() +
+      '.'
   );
   if (!ready.length)
     panel.append(
@@ -5564,7 +5632,7 @@ function localAssetPath(asset) {
 // Waits for the bitmap itself, not for a decoded frame. image.decode() never
 // settles while the window is hidden or fully occluded, which left an
 // image-based map (Icebreaker, The Labyrinth) stuck on "Loading ..." whenever
-// the map changed with Raid Notes in the background - exactly what happens when
+// the map changed with TarkovEyes in the background - exactly what happens when
 // a raid starts while the user is in the game. onload fires either way.
 function loadImage(path) {
   return new Promise((resolve, reject) => {
@@ -5740,7 +5808,7 @@ async function start() {
     // Static browser preview is isolated from the desktop progress store.
     let cached;
     try {
-      cached = JSON.parse(localStorage.getItem('raid-notes-preview'));
+      cached = JSON.parse(localStorage.getItem('tarkoveyes-preview'));
     } catch {}
     const freshProfile = () => ({
       quests: {},
@@ -5803,7 +5871,7 @@ async function start() {
       profiles: { pvp: freshProfile(), pve: freshProfile(), seasonal: freshProfile() },
       mode: 'pvp'
     };
-    const save = () => localStorage.setItem('raid-notes-preview', JSON.stringify(d));
+    const save = () => localStorage.setItem('tarkoveyes-preview', JSON.stringify(d));
     bridge = {
       bootstrap: async () => ({
         data: d,

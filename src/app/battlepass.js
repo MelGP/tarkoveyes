@@ -14,14 +14,20 @@
     for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
     return el;
   };
-  const storageKey = 'raid-notes-battlepass-layers-v1';
+  const storageKey = 'tarkoveyes-battlepass-layers-v1';
+  /* Renamed with the application. Read the old key once when the new one is
+     absent, so nobody's category choices vanish on the upgrade; the next save
+     writes the new key and the old one stops mattering. */
+  const legacyStorageKey = 'raid-notes-battlepass-layers-v1';
   let catalog,
     registered,
     context = null,
     enabled = new Set(),
     selectedId = null;
   try {
-    const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    const saved = JSON.parse(
+      localStorage.getItem(storageKey) || localStorage.getItem(legacyStorageKey) || '[]'
+    );
     if (Array.isArray(saved)) enabled = new Set(saved.filter(v => typeof v === 'string'));
   } catch {}
   const entries = () => {

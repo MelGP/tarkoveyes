@@ -69,7 +69,7 @@ system-wide — delete the folder and it is gone.
 npm run package
 ```
 
-That writes `src/dist/RaidNotes-win32-x64/` with `RaidNotes.exe` inside — 1,963
+That writes `src/dist/TarkovEyes-win32-x64/` with `TarkovEyes.exe` inside — 1,963
 files — plus a SHA-256 manifest of every one of them. Copy that folder anywhere
 and run the `.exe`; no Node.js is needed on that machine. Keep the folder
 together, moving the `.exe` on its own will not work.
@@ -88,7 +88,7 @@ The packager says what it could not do rather than shipping the wrong icon
 silently.
 
 Both ways read and write the **same** save folder,
-`%APPDATA%\RaidNotes\local-data`, so your progress follows you between them.
+`%APPDATA%\TarkovEyes\local-data`, so your progress follows you between them.
 
 ### First run
 
@@ -108,16 +108,26 @@ From then on: take a screenshot in raid and your position appears on the map.
 The app reads the *filename*, which already contains the coordinates — it never
 looks at the image.
 
-### Why the executable says RaidNotes
+### Upgrading from a Raid Notes install
 
-The `.exe` and the save folder still say **RaidNotes** while everything you read
-on screen says TarkovEyes. That is deliberate, not an oversight. The application
-was renamed in September 2026, but `%APPDATA%\RaidNotes` holds the real profile
-— every completed quest, every recorded raid — and renaming it would orphan the
-lot. A rename that loses the save is a worse bug than any name.
+The application was called **Raid Notes** until September 2026, and the old name
+survived on disk for a while after that because `%APPDATA%\RaidNotes` held the
+only copy of the real profile. It does not any more: nothing you can see or
+click says Raid Notes.
 
-The same goes for the `raid-notes-backup` marker inside exported backups, so
-files written by older builds still import.
+If you are coming from an older build, the first launch **moves your save for
+you**. It copies `%APPDATA%\RaidNotes\local-data` to
+`%APPDATA%\TarkovEyes\local-data`, and only when the new folder does not exist
+yet, so a later launch can never overwrite live data with a stale copy. It
+copies rather than moves, so the old folder stays exactly where it was as a way
+back — delete it once you are satisfied.
+
+Only `local-data` comes across. The rest of that folder is Chromium's own cache
+and is rebuilt on demand; carrying it over would import staleness, not history.
+
+Exported backups now carry a `tarkoveyes-backup` marker instead of
+`raid-notes-backup`. Nothing reads it — importing parses the file and normalises
+it — so backups written by older builds still import unchanged.
 
 ---
 
@@ -335,7 +345,7 @@ only through the small `window.companion` bridge in `preload.cjs`. Anything new
 that needs the operating system goes through a validated IPC handler and that
 bridge; Node APIs are never exposed to the page.
 
-Progress lives in `%APPDATA%\RaidNotes\local-data\progress.json`, isolated per
+Progress lives in `%APPDATA%\TarkovEyes\local-data\progress.json`, isolated per
 profile, with import, export and recovery from a damaged file.
 
 ---

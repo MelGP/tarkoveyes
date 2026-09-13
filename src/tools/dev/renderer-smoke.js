@@ -885,6 +885,54 @@
     await resetToDefaults();
     return opened + ': ' + seen.join(', ') + ', ' + flags + ' can finish here';
   });
+  await check('Available now offers only quests a trader could actually hand you', async () => {
+    // The filter used to demand a satisfied prerequisite, which dropped every
+    // chain-starting quest on the grounds that those are gated on loyalty and
+    // level. Half of that was wrong - most carry no level gate at all - and
+    // the loyalty half was never applied to the quests it did show, because no
+    // bundled file records loyalty for any quest. Widening it let three kinds
+    // of wrong row in, and this asserts all three stay out.
+    await resetToDefaults();
+    const offered = quests.filter(q => availableBecause(q));
+    if (!offered.length) throw Error('Available now is empty on this profile');
+
+    // Story chapters and the Battle Pass tracker are groupings this
+    // application invents. They have no prerequisite and no level gate, which
+    // is exactly the shape that now qualifies, so all 11 sailed in the first
+    // time this ran.
+    const invented = offered.filter(q => q.category);
+    if (invented.length)
+      throw Error(
+        invented.length +
+          ' invented quest(s) offered, e.g. ' +
+          invented[0].name +
+          ' (' +
+          invented[0].category +
+          ')'
+      );
+
+    // Never offer something the profile already has a record for.
+    const known = offered.filter(q => status(q) !== 'untracked');
+    if (known.length)
+      throw Error(known[0].name + ' is offered but its status is ' + status(known[0]));
+
+    // Never offer something behind a level the catalogue proves you lack.
+    const floor = provenLevel();
+    const tooHigh = offered.filter(q => (q.minPlayerLevel || 0) > floor);
+    if (tooHigh.length)
+      throw Error(
+        tooHigh[0].name + ' wants level ' + tooHigh[0].minPlayerLevel + ' over a proven ' + floor
+      );
+
+    // The two reasons are different claims and must stay distinguishable.
+    const reasons = new Set(offered.map(availableBecause));
+    for (const r of reasons)
+      if (r !== 'prerequisites' && r !== 'nothing known') throw Error('unknown reason "' + r + '"');
+
+    return (
+      offered.length + ' offered, proven level ' + floor + ', reasons: ' + [...reasons].join(' + ')
+    );
+  });
   removeEventListener('error', onError);
   removeEventListener('unhandledrejection', onError);
   const failed = results.filter(r => !r.ok);

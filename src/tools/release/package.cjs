@@ -3,7 +3,7 @@ const fs = require('node:fs'),
   crypto = require('node:crypto');
 const root = path.resolve(__dirname, '../..'),
   runtime = path.join(root, 'node_modules/electron/dist'),
-  out = path.join(root, 'dist/RaidNotes-win32-x64');
+  out = path.join(root, 'dist/TarkovEyes-win32-x64');
 if (!fs.existsSync(path.join(runtime, 'electron.exe')))
   throw Error('Install Electron before packaging');
 const outRelative = path.relative(root, out);
@@ -12,7 +12,7 @@ if (!outRelative || outRelative.startsWith('..') || path.isAbsolute(outRelative)
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 for (const entry of fs.readdirSync(runtime)) {
-  const dest = entry === 'electron.exe' ? 'RaidNotes.exe' : entry;
+  const dest = entry === 'electron.exe' ? 'TarkovEyes.exe' : entry;
   fs.cpSync(path.join(runtime, entry), path.join(out, dest), { recursive: true });
 }
 const app = path.join(out, 'resources/app');
@@ -79,16 +79,16 @@ if (!fs.existsSync(icon)) {
     /* not installed, which is the normal case here */
   }
   if (rcedit) {
-    rcedit(path.join(out, 'RaidNotes.exe'), { icon }).then(
-      () => console.log('Stamped the icon into RaidNotes.exe'),
+    rcedit(path.join(out, 'TarkovEyes.exe'), { icon }).then(
+      () => console.log('Stamped the icon into TarkovEyes.exe'),
       error => console.warn('Could not stamp the icon: ' + error.message)
     );
   } else {
     console.warn(
-      "rcedit is not installed, so RaidNotes.exe keeps Electron's icon.\n" +
+      "rcedit is not installed, so TarkovEyes.exe keeps Electron's icon.\n" +
         '  npm i -D rcedit   then re-run, or stamp it by hand:\n' +
         '  npx rcedit "' +
-        path.join(out, 'RaidNotes.exe') +
+        path.join(out, 'TarkovEyes.exe') +
         '" --set-icon "' +
         icon +
         '"'

@@ -25,7 +25,7 @@
  * only 256 is a PNG, which is the convention every icon toolchain follows.
  *
  * Usage:
- *   1. start App\RaidNotes.exe --remote-debugging-port=9222
+ *   1. start App\TarkovEyes.exe --remote-debugging-port=9222
  *   2. node tools/build/build-icon.cjs
  */
 const fs = require('node:fs');

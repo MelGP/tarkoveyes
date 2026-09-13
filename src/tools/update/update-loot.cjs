@@ -203,7 +203,7 @@ function containerIcon(type, category) {
 }
 async function fetchJson(url) {
   const response = await fetch(url, {
-    headers: { accept: 'application/json', 'user-agent': 'RaidNotes loot snapshot builder' }
+    headers: { accept: 'application/json', 'user-agent': 'TarkovEyes loot snapshot builder' }
   });
   if (!response.ok) throw Error(url + ' returned HTTP ' + response.status);
   return response.json();

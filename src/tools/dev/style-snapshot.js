@@ -12,7 +12,7 @@
  * Element identity is a structural path (tag, id and position among siblings),
  * so adding or removing a <link> in <head> does not shift every key.
  * Keep the browser at the same window size for both runs: widths are compared.
- * localStorage.removeItem('raid-notes-style-baseline-v2') starts over.
+ * localStorage.removeItem('tarkoveyes-style-baseline-v2') starts over.
  */
 (async () => {
   const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -161,7 +161,7 @@
     }
   };
 
-  const store = 'raid-notes-style-baseline-v2';
+  const store = 'tarkoveyes-style-baseline-v2';
   const baseline = JSON.parse(localStorage.getItem(store) || 'null');
   const taken = {};
   for (const [name, run] of Object.entries(scenes)) {

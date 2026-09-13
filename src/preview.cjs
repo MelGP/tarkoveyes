@@ -40,4 +40,4 @@ http
       res.end(error ? 'Not found' : body);
     });
   })
-  .listen(4318, '127.0.0.1', () => console.log('Raid Notes preview: http://127.0.0.1:4318'));
+  .listen(4318, '127.0.0.1', () => console.log('TarkovEyes preview: http://127.0.0.1:4318'));

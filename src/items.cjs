@@ -108,7 +108,7 @@ function normalizeItemPayload(
     .filter(Number.isFinite)
     .sort((a, b) => b - a)[0];
   return validateItemCatalog({
-    format: 'raid-notes-items-v1',
+    format: 'tarkoveyes-items-v1',
     mode,
     source: 'tarkov.dev',
     generatedAt: new Date().toISOString(),
@@ -120,7 +120,7 @@ function normalizeItemPayload(
 function validateItemCatalog(doc) {
   if (
     !doc ||
-    doc.format !== 'raid-notes-items-v1' ||
+    doc.format !== 'tarkoveyes-items-v1' ||
     !modeSlugs[doc.mode] ||
     !Array.isArray(doc.items) ||
     doc.items.length < 1000 ||

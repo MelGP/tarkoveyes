@@ -16,7 +16,7 @@ Normalized maps, per-map POIs and regular/PvE quest snapshots from Raid Signal, 
 
 Labs keycard item icons are bundled from `https://assets.tarkov.dev/{item-id}-icon.webp` and shown unchanged so map door markers match the in-game items.
 
-Loot container and loose-loot positions were generated 2026-09-10 from the `regular/maps` snapshot. Container marker artwork is copied unchanged from the tarkov.dev interactive-map assets. The 314 item icons used for loose-loot markers are bundled from `https://assets.tarkov.dev/{item-id}-icon.webp`. Raid Notes normalizes these records into local per-map files and does not query loot data while the app is running.
+Loot container and loose-loot positions were generated 2026-09-10 from the `regular/maps` snapshot. Container marker artwork is copied unchanged from the tarkov.dev interactive-map assets. The 314 item icons used for loose-loot markers are bundled from `https://assets.tarkov.dev/{item-id}-icon.webp`. TarkovEyes normalizes these records into local per-map files and does not query loot data while the app is running.
 
 ## Raid Signal parser references
 
@@ -24,7 +24,7 @@ https://github.com/QTtrash/tarkov-map — Apache License 2.0, included at `licen
 
 ## TarkovMonitor format reference
 
-https://github.com/the-hideout/TarkovMonitor — GPL-3.0. Its public documentation and log models were used to confirm the meaning of Tarkov `ChatMessageReceived` quest lifecycle message types. Raid Notes contains an independent, minimal JavaScript parser that retains only quest ID, lifecycle status, event ID and timestamp; no TarkovMonitor source code is distributed.
+https://github.com/the-hideout/TarkovMonitor — GPL-3.0. Its public documentation and log models were used to confirm the meaning of Tarkov `ChatMessageReceived` quest lifecycle message types. TarkovEyes contains an independent, minimal JavaScript parser that retains only quest ID, lifecycle status, event ID and timestamp; no TarkovMonitor source code is distributed.
 
 ## Electron
 
