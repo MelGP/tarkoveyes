@@ -20,8 +20,15 @@ const root = path.resolve(__dirname, '..');
 const dataDir = path.join(root, 'app/data');
 const check = process.argv.includes('--check');
 
-const aliases = { ground_zero: 'ground-zero', lab: 'the-lab', labyrinth: 'the-labyrinth', streets_of_tarkov: 'streets-of-tarkov' };
-const bundledMaps = new Set(JSON.parse(fs.readFileSync(path.join(dataDir, 'maps.json'), 'utf8')).map(map => map.id));
+const aliases = {
+  ground_zero: 'ground-zero',
+  lab: 'the-lab',
+  labyrinth: 'the-labyrinth',
+  streets_of_tarkov: 'streets-of-tarkov'
+};
+const bundledMaps = new Set(
+  JSON.parse(fs.readFileSync(path.join(dataDir, 'maps.json'), 'utf8')).map(map => map.id)
+);
 
 function collect(list) {
   const out = {};
@@ -49,7 +56,8 @@ async function fromDump(mode) {
 }
 
 async function fromApi(gameMode) {
-  const query = '{maps(gameMode: ' + gameMode + '){normalizedName bosses{spawnChance boss{normalizedName}}}}';
+  const query =
+    '{maps(gameMode: ' + gameMode + '){normalizedName bosses{spawnChance boss{normalizedName}}}}';
   const response = await fetch('https://api.tarkov.dev/graphql', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -70,7 +78,9 @@ async function run() {
     seasonalSource = 'tarkov.dev pvpSeason';
   } else {
     modes.seasonal = modes.pvp;
-    console.log('seasonal rates are not published in the static dump and the API was unreachable; reusing the PvP figures');
+    console.log(
+      'seasonal rates are not published in the static dump and the API was unreachable; reusing the PvP figures'
+    );
   }
 
   const differing = [];
@@ -78,7 +88,12 @@ async function run() {
     for (const [mob, chance] of Object.entries(bosses))
       if (modes.pve[map]?.[mob] !== undefined && Math.abs(modes.pve[map][mob] - chance) > 0.001)
         differing.push(map + '/' + mob);
-  console.log('maps covered: ' + Object.keys(modes.pvp).length + ', boss rates that differ between PvP and PvE: ' + differing.length);
+  console.log(
+    'maps covered: ' +
+      Object.keys(modes.pvp).length +
+      ', boss rates that differ between PvP and PvE: ' +
+      differing.length
+  );
   if (check) return;
 
   fs.writeFileSync(

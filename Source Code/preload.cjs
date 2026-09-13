@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('companion', {
   exportBackup: () => ipcRenderer.invoke('export-backup'),
   importBackup: () => ipcRenderer.invoke('import-backup'),
   openData: () => ipcRenderer.invoke('open-data'),
+  openWiki: link => ipcRenderer.invoke('open-wiki', link),
   onObserver: callback => {
     const handler = (_e, state) => callback(state);
     ipcRenderer.on('observer', handler);

@@ -78,6 +78,19 @@ function canonicalMap(s) {
     ] || null
   );
 }
+/* Every log line starts '2026-09-13 02:10:04.727|'. The observer used to stamp
+ * a raid with Date.now(), which is when the application READ the line, not
+ * when it happened - so a session read after the fact recorded a whole raid as
+ * forty-two seconds long, and half the raid history came out shorter than a
+ * raid can be. Local time, because that is what the game writes. */
+function lineTime(line) {
+  const stamp = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}\.\d{3})/.exec(line);
+  if (!stamp) return null;
+  const at = Date.parse(stamp[1] + 'T' + stamp[2]);
+  /* a clock that disagrees with this one by more than a year is not a clock */
+  return Number.isFinite(at) && Math.abs(at - Date.now()) < 366 * 24 * 3600 * 1000 ? at : null;
+}
+
 function parseLogLine(line) {
   const session = line.match(/Session mode:\s*(Pve|PVE|Regular|PVP|PvpSeason|Seasonal|SZN)\b/i);
   if (session) {
@@ -121,7 +134,9 @@ function parseQuestNotifications(text) {
       status,
       // The notification names the trader that sent it. For a quest the bundled
       // catalogues do not know, that is the only identifying detail available.
-      trader: /^[a-f0-9]{24}$/i.test(String(message.uid || '')) ? String(message.uid).toLowerCase() : null,
+      trader: /^[a-f0-9]{24}$/i.test(String(message.uid || ''))
+        ? String(message.uid).toLowerCase()
+        : null,
       eventId: String(payload.eventId || `${id}:${status}:${observedAt}`),
       observedAt
     };
@@ -328,7 +343,8 @@ class Store {
       raidHistory: [],
       customMarkers: {},
       questNotes: {},
-      favorites: []
+      favorites: [],
+      hiddenQuests: []
     });
     this.data = {
       version: 1,
@@ -462,6 +478,11 @@ class Store {
             this.data.profiles[mode].questNotes = {};
           if (!Array.isArray(this.data.profiles[mode].favorites))
             this.data.profiles[mode].favorites = [];
+          /* Added after people already had saved profiles, so it has to default
+             here as well as in the shape above - an older file has no such key
+             and every read of it would otherwise be undefined. */
+          if (!Array.isArray(this.data.profiles[mode].hiddenQuests))
+            this.data.profiles[mode].hiddenQuests = [];
         }
       } else this.error = 'Unrecognized saved data. A recovery copy will be kept.';
     } catch (e) {
@@ -777,11 +798,16 @@ class Observer extends EventEmitter {
                   state.raid = 'loading';
                   state.position = null;
                 }
+                const happenedAt = lineTime(line);
                 if (event.type === 'end') {
                   state.raid = 'ended';
+                  state.raidAt = happenedAt;
                   state.position = null;
                 }
-                if (event.type === 'start') state.raid = 'started';
+                if (event.type === 'start') {
+                  state.raid = 'started';
+                  state.raidAt = happenedAt;
+                }
               }
               this.offsets.set(f, {
                 size: from + bytesRead,
@@ -864,6 +890,7 @@ class Observer extends EventEmitter {
 module.exports = {
   parseScreenshot,
   parseLogLine,
+  lineTime,
   parseQuestNotifications,
   scanQuestHistory,
   canonicalMap,

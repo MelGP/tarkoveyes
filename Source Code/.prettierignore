@@ -1,0 +1,16 @@
+# Pinned third-party inputs. tools/sources/battlepass/data-*.js are the upstream
+# community map literals at a fixed commit, parsed (never executed) by
+# tools/build-battlepass.cjs and read verbatim by test/battlepass.test.cjs.
+# Reformatting them would rewrite somebody else's file and could move the
+# parser's ground under it.
+tools/sources/
+
+# Generated data and build output.
+app/data/
+dist/
+node_modules/
+
+# app.css is five concatenated redesigns; the project formats JavaScript only,
+# and running Prettier over it would rewrite all 100 KB in one unreviewable diff.
+app/app.css
+app/battlepass.css

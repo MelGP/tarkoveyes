@@ -16,13 +16,18 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const dataDir = path.join(root, 'app/data');
 const check = process.argv.includes('--check');
-const only = process.argv.includes('--quests') ? 'quests' : process.argv.includes('--bosses') ? 'bosses' : 'both';
+const only = process.argv.includes('--quests')
+  ? 'quests'
+  : process.argv.includes('--bosses')
+    ? 'bosses'
+    : 'both';
 
 async function save(url, file, label) {
   const response = await fetch(url);
   if (!response.ok) throw Error(response.status + ' for ' + label);
   const bytes = Buffer.from(await response.arrayBuffer());
-  const webp = bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP';
+  const webp =
+    bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP';
   const png = bytes.subarray(1, 4).toString() === 'PNG';
   // A 404 page saved under an image name would show up as a broken picture, so
   // the bytes have to look like the image they claim to be.
@@ -37,7 +42,8 @@ function bundledQuestIds() {
   for (const file of ['quests.json', 'quests-pve.json', 'quests-seasonal.json']) {
     const full = path.join(dataDir, file);
     if (!fs.existsSync(full)) continue;
-    for (const quest of JSON.parse(fs.readFileSync(full, 'utf8')).quests) ids.set(quest.id, quest.name);
+    for (const quest of JSON.parse(fs.readFileSync(full, 'utf8')).quests)
+      ids.set(quest.id, quest.name);
   }
   return ids;
 }
@@ -52,7 +58,12 @@ function bundledBosses() {
 
 // tarkov.dev names portraits after the boss, lower case, punctuation dropped and
 // spaces turned into dashes: "Black Div. Raider" is black-div-raider-portrait.
-const bossSlug = name => name.toLowerCase().replace(/[^a-z ]/g, '').trim().replace(/\s+/g, '-');
+const bossSlug = name =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z ]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
 
 async function quests() {
   const wanted = bundledQuestIds();
@@ -77,13 +88,24 @@ async function quests() {
     if (saved % 50 === 0) console.log('  ' + saved + ' quest pictures…');
   }
   console.log(
-    'quests: ' + Object.keys(images).length + ' with a picture, ' + missing + ' without, ' + saved + ' downloaded' +
+    'quests: ' +
+      Object.keys(images).length +
+      ' with a picture, ' +
+      missing +
+      ' without, ' +
+      saved +
+      ' downloaded' +
       (bytes ? ' (' + (bytes / 1024 / 1024).toFixed(1) + ' MB)' : '')
   );
   if (check) return;
   fs.writeFileSync(
     path.join(dataDir, 'quest-images.json'),
-    JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), source: 'https://tarkov.dev', images })
+    JSON.stringify({
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      source: 'https://tarkov.dev',
+      images
+    })
   );
 }
 
@@ -113,12 +135,19 @@ async function bosses() {
     if (stored) entries[name] = { id, image: stored };
     else missing.push(name);
   }
-  console.log('bosses: ' + Object.keys(entries).length + ' with a portrait, ' + saved + ' downloaded');
+  console.log(
+    'bosses: ' + Object.keys(entries).length + ' with a portrait, ' + saved + ' downloaded'
+  );
   if (missing.length) console.log('  no portrait for: ' + missing.join(', '));
   if (check) return;
   fs.writeFileSync(
     path.join(dataDir, 'bosses.json'),
-    JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), source: 'https://tarkov.dev', bosses: entries })
+    JSON.stringify({
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      source: 'https://tarkov.dev',
+      bosses: entries
+    })
   );
 }
 

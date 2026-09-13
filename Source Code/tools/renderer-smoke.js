@@ -27,7 +27,11 @@
     try {
       const detail = await fn();
       const raised = errors.slice(before);
-      results.push({ name, ok: !raised.length, detail: raised.length ? raised.join(' | ') : detail });
+      results.push({
+        name,
+        ok: !raised.length,
+        detail: raised.length ? raised.join(' | ') : detail
+      });
     } catch (error) {
       results.push({ name, ok: false, detail: error.message });
     }
@@ -130,7 +134,9 @@
 
   await check('quest brief renders its objectives', async () => {
     if (!(await pickQuest('Background Check'))) throw Error('quest not found in the list');
-    const titles = [...document.querySelectorAll('#details .section-title')].map(t => t.textContent);
+    const titles = [...document.querySelectorAll('#details .section-title')].map(
+      t => t.textContent
+    );
     if (!titles.some(t => /OBJECTIVES/.test(t))) throw Error('no objectives section');
     return titles.join(' / ');
   });
@@ -155,14 +161,18 @@
     const summary = document.querySelector('#details .active-summary');
     if (!summary) throw Error('no raid summary');
     const kit = document.querySelector('#details .raid-kit');
-    const rows = kit ? kit.querySelectorAll('.raid-kit-row').length + ' kit rows' : 'no keys needed';
+    const rows = kit
+      ? kit.querySelectorAll('.raid-kit-row').length + ' kit rows'
+      : 'no keys needed';
     return summary.querySelector('h2').textContent + ' · ' + rows;
   });
 
   await check('dashboard shows its panels', async () => {
     $('dashboard-button').click();
     await wait(800);
-    const panels = [...document.querySelectorAll('#dashboard-content .dashboard-panel h3')].map(h => h.textContent);
+    const panels = [...document.querySelectorAll('#dashboard-content .dashboard-panel h3')].map(
+      h => h.textContent
+    );
     $('dashboard-dialog').close();
     for (const wanted of ['Where to go next', 'Ready to start', 'Progress'])
       if (!panels.includes(wanted)) throw Error('missing panel: ' + wanted);
@@ -212,28 +222,87 @@
     const rail = document.querySelector('.sidebar').getBoundingClientRect();
     const card = $('details').getBoundingClientRect();
     if (card.left < rail.right) throw Error('brief overlaps the rail');
-    if (card.left > rail.right + 40) throw Error('brief is ' + Math.round(card.left - rail.right) + 'px from the rail');
-    if (card.right > innerWidth) throw Error('brief runs off the window at ' + Math.round(card.right));
-    return Math.round(card.width) + 'px wide, ' + Math.round(card.left - rail.right) + 'px from the rail';
+    if (card.left > rail.right + 40)
+      throw Error('brief is ' + Math.round(card.left - rail.right) + 'px from the rail');
+    if (card.right > innerWidth)
+      throw Error('brief runs off the window at ' + Math.round(card.right));
+    return (
+      Math.round(card.width) + 'px wide, ' + Math.round(card.left - rail.right) + 'px from the rail'
+    );
   });
 
-  await check('the brief follows the row you pick', async () => {
+  await check('the brief points at the row you picked', async () => {
     if (!wideLayout) return 'narrow layout, brief does not move';
+    const stage = document.querySelector('main');
+    /* Ask what alignBrief() asks. The classes can disagree with the module
+       variables, and a guard that reads the DOM then 'fixes' the wrong one
+       leaves the real blocker in place. */
+    const focusOn = () =>
+      typeof mapFocus === 'boolean' ? mapFocus : stage.classList.contains('map-focus');
+    const briefShut = () =>
+      typeof detailsCollapsed === 'boolean'
+        ? detailsCollapsed
+        : stage.classList.contains('details-collapsed');
+    if (focusOn()) {
+      $('focus-map').click();
+      await wait(500);
+    }
+    if (briefShut()) {
+      $('toggle-details').click();
+      await wait(600);
+    }
+    if (focusOn() || briefShut())
+      throw Error(
+        'could not open the brief: mapFocus=' + focusOn() + ' detailsCollapsed=' + briefShut()
+      );
+
     const rows = [...$('quest-list').querySelectorAll('.quest-row')];
     if (rows.length < 4) return 'too few quests to tell';
-    rows[0].click();
-    await wait(800);
-    const high = $('details').getBoundingClientRect().top;
-    rows[Math.min(rows.length - 1, 5)].click();
-    await wait(800);
-    const low = $('details').getBoundingClientRect().top;
-    if (low <= high) throw Error('picking a lower row did not move the card down');
-    return Math.round(high) + 'px then ' + Math.round(low) + 'px';
+    /* The card is capped, so a row far down the rail clamps it and the card
+       stops moving - that is the design. What holds for every row is that the
+       notch points at the row the card is showing. */
+    const readings = [];
+    for (const index of [0, 2, Math.min(rows.length - 1, 5)]) {
+      rows[index].click();
+      await wait(900);
+      if (!stage.classList.contains('brief-tied')) {
+        readings.push('row ' + index + ': not tied');
+        continue;
+      }
+      const after = getComputedStyle(stage, ':after');
+      const notchTop = parseFloat(after.top);
+      const notchHeight = parseFloat(after.height) || 0;
+      const stageBox = stage.getBoundingClientRect();
+      const centre = stageBox.top + notchTop + notchHeight / 2;
+      const rowBox = rows[index].getBoundingClientRect();
+      const rowCentre = rowBox.top + rowBox.height / 2;
+      const off = Math.round(centre - rowCentre);
+      if (Math.abs(off) > 4)
+        throw Error(
+          'the notch missed row ' +
+            index +
+            ' by ' +
+            off +
+            'px (notch ' +
+            Math.round(centre) +
+            ', row ' +
+            Math.round(rowCentre) +
+            ')'
+        );
+      readings.push('row ' + index + ' off by ' + off + 'px');
+    }
+    return readings.join(', ');
   });
 
   await check('nothing on the map hides under a panel', async () => {
     const panels = ['.sidebar', '#details'].map(s => document.querySelector(s)).filter(Boolean);
-    const floats = ['#focus-label', '.toolbar-actions', '.position-bar', '.zoom-controls', '.north'];
+    const floats = [
+      '#focus-label',
+      '.toolbar-actions',
+      '.position-bar',
+      '.zoom-controls',
+      '.north'
+    ];
     const live = el => {
       const cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden') return null;
@@ -261,9 +330,16 @@
   await check('the rail is the same width whatever else is open', async () => {
     if (!wideLayout) return 'narrow layout, no rail';
     const main = document.querySelector('main');
-    const width = () => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width);
-    if (main.classList.contains('map-focus')) { $('focus-map').click(); await wait(500); }
-    if (main.classList.contains('details-collapsed')) { $('toggle-details').click(); await wait(600); }
+    const width = () =>
+      Math.round(document.querySelector('.sidebar').getBoundingClientRect().width);
+    if (main.classList.contains('map-focus')) {
+      $('focus-map').click();
+      await wait(500);
+    }
+    if (main.classList.contains('details-collapsed')) {
+      $('toggle-details').click();
+      await wait(600);
+    }
     const open = width();
     $('toggle-details').click();
     await wait(700);
@@ -272,7 +348,9 @@
     await wait(700);
     const reopened = width();
     if (open !== closed || open !== reopened)
-      throw Error('rail moves: ' + open + ' open, ' + closed + ' closed, ' + reopened + ' reopened');
+      throw Error(
+        'rail moves: ' + open + ' open, ' + closed + ' closed, ' + reopened + ' reopened'
+      );
     return open + 'px throughout';
   });
 
@@ -294,7 +372,8 @@
     }
     for (let i = 1; i < steps.length; i++)
       if (steps[i] > steps[i - 1]) throw Error('a press added something: ' + steps.join(' > '));
-    if (steps[steps.length - 1] !== 0) throw Error('something survived four presses: ' + steps.join(' > '));
+    if (steps[steps.length - 1] !== 0)
+      throw Error('something survived four presses: ' + steps.join(' > '));
     return steps.join(' > ');
   });
 
@@ -323,7 +402,11 @@
     const orphans = [...swatches].filter(c => !strokes.has(c));
     if (orphans.length)
       throw Error(
-        'swatch the map never draws: ' + orphans.join(', ') + '  (map draws ' + [...strokes].join(', ') + ')'
+        'swatch the map never draws: ' +
+          orphans.join(', ') +
+          '  (map draws ' +
+          [...strokes].join(', ') +
+          ')'
       );
     return swatches.size + ' swatches, all drawn on the map';
   });
@@ -364,7 +447,9 @@
     const status = $('status-filter').value;
     await resetToDefaults();
     if (!after)
-      throw Error('My Raid emptied the rail: ' + before + ' rows -> 0, filter now "' + status + '"');
+      throw Error(
+        'My Raid emptied the rail: ' + before + ' rows -> 0, filter now "' + status + '"'
+      );
     return before + ' rows -> ' + after + ', filter "' + status + '"';
   });
 
@@ -390,12 +475,125 @@
     await wait(500);
     if (focused < unfocused - 1)
       throw Error(
-        'Focus made the map narrower: ' + Math.round(unfocused) + 'px -> ' + Math.round(focused) +
-          'px, grid-column "' + placement + '"'
+        'Focus made the map narrower: ' +
+          Math.round(unfocused) +
+          'px -> ' +
+          Math.round(focused) +
+          'px, grid-column "' +
+          placement +
+          '"'
       );
     if (focused < innerWidth * 0.9)
-      throw Error('Focus left the map at ' + Math.round((focused / innerWidth) * 100) + '% of the window');
-    return Math.round(unfocused) + 'px -> ' + Math.round(focused) + 'px (' + Math.round((focused / innerWidth) * 100) + '% of the window)';
+      throw Error(
+        'Focus left the map at ' + Math.round((focused / innerWidth) * 100) + '% of the window'
+      );
+    return (
+      Math.round(unfocused) +
+      'px -> ' +
+      Math.round(focused) +
+      'px (' +
+      Math.round((focused / innerWidth) * 100) +
+      '% of the window)'
+    );
+  });
+
+  await check('F focuses the map, even right after using a dropdown', async () => {
+    // A <select> keeps focus after you pick from it and spends letter keys on
+    // type-ahead, so F was dead from the moment you chose a map - the first
+    // thing anyone does. The fix hands focus back after a pointer-driven
+    // change; this check is here because the failure is silent.
+    await resetToDefaults();
+    const main = document.querySelector('main');
+    if (main.classList.contains('map-focus')) {
+      $('focus-map').click();
+      await wait(400);
+    }
+    const picker = $('status-filter');
+    picker.focus();
+    picker.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    picker.value = 'all';
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
+    await wait(900);
+    const stillHoldingFocus = document.activeElement === picker;
+
+    const tap = () =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+    tap();
+    await wait(450);
+    const entered = main.classList.contains('map-focus');
+    tap();
+    await wait(450);
+    const left = !main.classList.contains('map-focus');
+    await resetToDefaults();
+
+    if (stillHoldingFocus)
+      throw Error('the dropdown kept focus after a mouse change, so F is dead');
+    if (!entered) throw Error('F did not enter map focus');
+    if (!left) throw Error('F did not leave map focus');
+    return 'toggles both ways with a dropdown just used';
+  });
+
+  await check('only the bars that lead somewhere look pressable', async () => {
+    // Three of the five Progress bars are a reading, not a route: most quests
+    // have no prerequisite, so a depth tree of them was one column holding
+    // 59%, 41% and 86% of the set. Those are plain rows. The two real routes
+    // are buttons and open a tree that ends on the route.
+    await resetToDefaults();
+    $('dashboard-button').click();
+    await wait(1200);
+    const bars = [...document.querySelectorAll('.dashboard-progress')];
+    if (!bars.length) throw Error('no progress bars in the dashboard');
+
+    const pressable = [];
+    const readings = [];
+    for (const bar of bars) {
+      const label = bar.querySelector('span')?.textContent || '(unlabelled)';
+      if (bar.tagName === 'BUTTON') pressable.push(label);
+      else {
+        // a row that does nothing must not invite a click
+        if (bar.onclick) throw Error(label + ' is not a button but still has a click handler');
+        if (getComputedStyle(bar).cursor === 'pointer')
+          throw Error(label + ' is not pressable but shows a pointer cursor');
+        readings.push(label);
+      }
+    }
+    if (!pressable.length) throw Error('no route bar is pressable any more');
+
+    for (const label of pressable) {
+      if (!$('dashboard-dialog').open) {
+        document.querySelectorAll('dialog[open]').forEach(d => d.close());
+        $('dashboard-button').click();
+        await wait(1000);
+      }
+      const bar = [...document.querySelectorAll('.dashboard-progress')].find(
+        b => b.querySelector('span')?.textContent === label
+      );
+      bar.click();
+      await wait(1300);
+      if (!$('chain-dialog').open) throw Error(label + ' did not open its tree');
+      const columns = [...document.querySelectorAll('#chain-content .chain-band')];
+      const nodes = document.querySelectorAll('#chain-content .chain-node').length;
+      if (!columns.length || !nodes) throw Error(label + ' opened an empty tree');
+      const biggest = Math.max(...columns.map(c => c.querySelectorAll('.chain-node').length));
+      // a tree whose widest step holds most of the set is a list wearing a
+      // tree, which is exactly why the other three are not buttons
+      if (biggest / nodes > 0.5)
+        throw Error(
+          label + ' is not shaped like a route: ' + biggest + ' of its ' + nodes + ' quests are in one column'
+        );
+      // and a quest inside it opens its own chain, so the two views connect
+      const node = document.querySelector('#chain-content .chain-node');
+      const name = node.querySelector('.chain-name')?.textContent;
+      node.click();
+      await wait(1000);
+      if ($('chain-title').textContent !== name)
+        throw Error('clicking ' + name + ' in ' + label + ' did not open its own chain');
+      $('chain-dialog').close();
+      await wait(250);
+    }
+    document.querySelectorAll('dialog[open]').forEach(d => d.close());
+    await resetToDefaults();
+    return pressable.length + ' routes (' + pressable.join(', ') + '), ' + readings.length + ' readings';
   });
 
   removeEventListener('error', onError);

@@ -25,7 +25,8 @@ function bundledTraders() {
     const full = path.join(dataDir, file);
     if (!fs.existsSync(full)) continue;
     for (const quest of JSON.parse(fs.readFileSync(full, 'utf8')).quests)
-      if (quest.traderId && !traders.has(quest.traderId)) traders.set(quest.traderId, quest.traderName);
+      if (quest.traderId && !traders.has(quest.traderId))
+        traders.set(quest.traderId, quest.traderName);
   }
   return traders;
 }
@@ -59,7 +60,11 @@ async function run() {
     const bytes = Buffer.from(await response.arrayBuffer());
     // Every portrait must really be a WebP; a 404 page saved as .webp would
     // leave a broken image in the quest list.
-    if (bytes.length < 200 || bytes.subarray(0, 4).toString() !== 'RIFF' || bytes.subarray(8, 12).toString() !== 'WEBP')
+    if (
+      bytes.length < 200 ||
+      bytes.subarray(0, 4).toString() !== 'RIFF' ||
+      bytes.subarray(8, 12).toString() !== 'WEBP'
+    )
       throw Error('Not a WebP image: ' + url);
     fs.mkdirSync(assetDir, { recursive: true });
     fs.writeFileSync(file, bytes);
@@ -68,7 +73,9 @@ async function run() {
 
   if (missing.length) console.log('no portrait offered for: ' + missing.join(', '));
   if (check) {
-    const onDisk = Object.values(entries).filter(entry => fs.existsSync(path.join(root, 'app', entry.image))).length;
+    const onDisk = Object.values(entries).filter(entry =>
+      fs.existsSync(path.join(root, 'app', entry.image))
+    ).length;
     console.log('portraits already bundled: ' + onDisk + ' of ' + Object.keys(entries).length);
     return;
   }

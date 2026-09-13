@@ -43,7 +43,8 @@ const placement = require('../app/data/battlepass-placement.json');
 const out = path.join(__dirname, 'sources/battlepass/calibration');
 const only = process.argv[2];
 
-const escape = text => String(text).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+const escape = text =>
+  String(text).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
 
 function marks(points, side) {
   let svg = '';
@@ -55,8 +56,9 @@ function marks(points, side) {
       ? `<rect x="${x - 6}" y="${y - 6}" width="12" height="12" fill="none" stroke="${colour}" stroke-width="2"/>`
       : `<circle cx="${x}" cy="${y}" r="6" fill="none" stroke="${colour}" stroke-width="2"/>`;
     svg += `<circle cx="${x}" cy="${y}" r="1.6" fill="${colour}"/>`;
-    svg += `<text x="${x + 8}" y="${y - 7}" fill="${colour}" font-size="15" font-family="Consolas,monospace"`
-      + ` stroke="#0b0f10" stroke-width="3" paint-order="stroke">${p.n}</text>`;
+    svg +=
+      `<text x="${x + 8}" y="${y - 7}" fill="${colour}" font-size="15" font-family="Consolas,monospace"` +
+      ` stroke="#0b0f10" stroke-width="3" paint-order="stroke">${p.n}</text>`;
   }
   return svg;
 }
@@ -87,24 +89,44 @@ function marks(points, side) {
       });
     });
 
-    const left = await sharp(path.join(root, map.image)).resize(1000, 1000, { fit: 'fill' }).png().toBuffer();
+    const left = await sharp(path.join(root, map.image))
+      .resize(1000, 1000, { fit: 'fill' })
+      .png()
+      .toBuffer();
     let artwork = fs.readFileSync(path.join(root, 'assets', def.baseAsset.path));
     if (def.baseAsset.path.endsWith('.svg')) {
-      const hidden = def.floors.filter(f => f.svgLayer).map(f => `[id="${f.svgLayer}"]{display:none}`).join('');
+      const hidden = def.floors
+        .filter(f => f.svgLayer)
+        .map(f => `[id="${f.svgLayer}"]{display:none}`)
+        .join('');
       artwork = Buffer.from(artwork.toString().replace('</svg>', `<style>${hidden}</style></svg>`));
     }
-    const right = await sharp(artwork, { limitInputPixels: false }).resize(1000, 1000, { fit: 'fill' }).png().toBuffer();
+    const right = await sharp(artwork, { limitInputPixels: false })
+      .resize(1000, 1000, { fit: 'fill' })
+      .png()
+      .toBuffer();
 
     let overlay = '<svg width="2000" height="1030" xmlns="http://www.w3.org/2000/svg">';
     for (let side = 0; side < 2; side++)
       for (let i = 100; i < 1000; i += 100)
-        overlay += `<path d="M${side * 1000 + i} 30v1000 M${side * 1000} ${i + 30}h1000"`
-          + ' stroke="#ffea7b" stroke-opacity=".22" stroke-width="1"/>';
-    overlay += marks(pairs.map(p => p.source), 0) + marks(pairs.map(p => p.target), 1);
-    overlay += `<text x="10" y="22" fill="#fff" font-size="18" font-family="Consolas,monospace">`
-      + `${escape(map.id)} — community source, ${pairs.length} points</text>`;
-    overlay += `<text x="1010" y="22" fill="#fff" font-size="18" font-family="Consolas,monospace">`
-      + `tactical artwork — red circle = main map, blue square = detached diagram</text>`;
+        overlay +=
+          `<path d="M${side * 1000 + i} 30v1000 M${side * 1000} ${i + 30}h1000"` +
+          ' stroke="#ffea7b" stroke-opacity=".22" stroke-width="1"/>';
+    overlay +=
+      marks(
+        pairs.map(p => p.source),
+        0
+      ) +
+      marks(
+        pairs.map(p => p.target),
+        1
+      );
+    overlay +=
+      `<text x="10" y="22" fill="#fff" font-size="18" font-family="Consolas,monospace">` +
+      `${escape(map.id)} — community source, ${pairs.length} points</text>`;
+    overlay +=
+      `<text x="1010" y="22" fill="#fff" font-size="18" font-family="Consolas,monospace">` +
+      `tactical artwork — red circle = main map, blue square = detached diagram</text>`;
     overlay += '</svg>';
 
     const file = path.join(out, map.id + '-points.png');
@@ -119,7 +141,11 @@ function marks(points, side) {
     const detached = pairs.filter(p => p.target.detached).length;
     written.push({ map: map.id, points: pairs.length, detached, file });
     console.log(
-      map.id.padEnd(20) + String(pairs.length).padStart(3) + ' points, ' + String(detached).padStart(3) + ' from detached diagrams'
+      map.id.padEnd(20) +
+        String(pairs.length).padStart(3) +
+        ' points, ' +
+        String(detached).padStart(3) +
+        ' from detached diagrams'
     );
   }
   console.log('\nwritten to ' + out);

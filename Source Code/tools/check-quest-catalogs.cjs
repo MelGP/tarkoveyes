@@ -54,7 +54,8 @@ async function apiTasks(gameMode) {
   }
   const tracks = path.join(dataDir, 'special-tracks.json');
   if (fs.existsSync(tracks))
-    for (const quest of JSON.parse(fs.readFileSync(tracks, 'utf8')).quests || []) known.add(quest.id);
+    for (const quest of JSON.parse(fs.readFileSync(tracks, 'utf8')).quests || [])
+      known.add(quest.id);
 
   console.log('catalogue           bundled   upstream   missing   extra   source');
   for (const entry of catalogs) {
@@ -104,9 +105,18 @@ async function apiTasks(gameMode) {
     const byState = {};
     for (const id of unknown) byState[profile.quests[id]] = (byState[profile.quests[id]] || 0) + 1;
     console.log(
-      '  ' + mode.padEnd(10) + unknown.length + '  (' + Object.entries(byState).map(([k, v]) => k + ': ' + v).join(', ') + ')'
+      '  ' +
+        mode.padEnd(10) +
+        unknown.length +
+        '  (' +
+        Object.entries(byState)
+          .map(([k, v]) => k + ': ' + v)
+          .join(', ') +
+        ')'
     );
-    console.log('             ' + unknown.slice(0, 4).join(', ') + (unknown.length > 4 ? ', …' : ''));
+    console.log(
+      '             ' + unknown.slice(0, 4).join(', ') + (unknown.length > 4 ? ', …' : '')
+    );
   }
 })().catch(error => {
   console.error(error.message);

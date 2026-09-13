@@ -1085,8 +1085,9 @@ app.whenReady().then(() => {
     const mode = validateMode(input?.mode),
       id = String(input?.id || ''),
       hasNote = typeof input?.note === 'string',
-      hasFavorite = typeof input?.favorite === 'boolean';
-    if (!ids.has(id) || (!hasNote && !hasFavorite) || (hasNote && input.note.length > 2000))
+      hasFavorite = typeof input?.favorite === 'boolean',
+      hasHidden = typeof input?.hidden === 'boolean';
+    if (!ids.has(id) || (!hasNote && !hasFavorite && !hasHidden) || (hasNote && input.note.length > 2000))
       throw Error('Invalid quest metadata');
     const p = store.data.profiles[mode];
     if (hasNote) {
@@ -1098,6 +1099,12 @@ app.whenReady().then(() => {
       if (input.favorite) favorites.add(id);
       else favorites.delete(id);
       p.favorites = [...favorites];
+    }
+    if (hasHidden) {
+      const hiddenQuests = new Set(p.hiddenQuests);
+      if (input.hidden) hiddenQuests.add(id);
+      else hiddenQuests.delete(id);
+      p.hiddenQuests = [...hiddenQuests];
     }
     store.write();
     return true;
@@ -1248,6 +1255,25 @@ app.whenReady().then(() => {
   });
   register('refresh-logs', refreshQuestLogs);
   register('open-data', () => shell.openPath(path.dirname(store.file)));
+  /* The renderer cannot follow a link: navigation and new windows are denied,
+     and its CSP is default-src 'self'. So a wiki page opens in the real
+     browser, through here - and only ever a wiki page. The URL is rebuilt from
+     a parse rather than pattern-matched, because openExternal hands whatever it
+     is given to the operating system, and a renderer that has been tampered
+     with must not be able to reach anything else through this. */
+  register('open-wiki', link => {
+    let url;
+    try {
+      url = new URL(String(link));
+    } catch {
+      throw new Error('not a URL');
+    }
+    if (url.protocol !== 'https:') throw new Error('not https');
+    if (url.hostname !== 'escapefromtarkov.fandom.com') throw new Error('not the wiki');
+    if (!url.pathname.startsWith('/wiki/')) throw new Error('not a wiki page');
+    shell.openExternal('https://escapefromtarkov.fandom.com' + url.pathname);
+    return true;
+  });
   observer.on('state', state => {
     if (!win.isDestroyed()) win.webContents.send('observer', state);
   });

@@ -8,6 +8,7 @@ let bridge = window.companion,
   quests = [],
   allData,
   specialTracks = null,
+  questWiki = {},
   itemCatalog = null,
   itemScanRunning = false,
   itemHotkeyState = { enabled: true, registered: false, accelerator: 'Shift+F8' },
@@ -231,6 +232,11 @@ function applyQuestPathFilter() {
 function unlockedBy(id) {
   return quests.filter(q => (q.requirements || []).some(req => requirementId(req) === id));
 }
+/* The same ternary was written out in three places and is about to be needed
+ * in two more. */
+function modeLabel(mode) {
+  return mode === 'seasonal' ? 'Seasonal/Kord Breach' : String(mode).toUpperCase();
+}
 function mapName(id) {
   const known = mapDefinitions.find(map => map.id === id)?.displayName;
   return (
@@ -245,7 +251,12 @@ function questMaps(q) {
   return q.mapIds?.length ? q.mapIds.map(mapName).join(', ') : 'Any location';
 }
 function activeMapQuests() {
-  return quests.filter(q => status(q) === 'active' && q.mapIds.includes(currentMapId));
+  /* A quest you have hidden should not be on the map either - hiding it in the
+     list and leaving its markers on the artwork would be the worst of both. */
+  const hiddenQuests = new Set(profile().hiddenQuests || []);
+  return quests.filter(
+    q => status(q) === 'active' && q.mapIds.includes(currentMapId) && !hiddenQuests.has(q.id)
+  );
 }
 function ensureRaidData() {
   const p = profile();
@@ -473,14 +484,23 @@ function renderList() {
     filter = $('status-filter').value,
     pathFilter = $('path-filter')?.value || 'all',
     favorites = new Set(profile().favorites || []),
+    hiddenQuests = new Set(profile().hiddenQuests || []),
     collector = pathFilter === 'collector' ? collectorPath() : null,
     lightkeeper = pathFilter === 'lightkeeper' ? lightkeeperPath() : null;
   const matching = quests.filter(
     q =>
+      /* Hidden quests leave every list and the map. The Hidden filter is how
+         they come back - without it they would be unreachable, which is a
+         trap rather than a feature. */
+      (filter === 'hidden' ? hiddenQuests.has(q.id) : !hiddenQuests.has(q.id)) &&
       (!map || q.mapIds.includes(map)) &&
       (!trader || q.traderName === trader) &&
       (filter === 'all' ||
         (filter === 'open' && status(q) !== 'completed') ||
+        /* the inverse of Untracked: anything you have started, finished or
+           failed, which is what the Tracked quests bar counts */
+        (filter === 'tracked' && status(q) !== 'untracked') ||
+        filter === 'hidden' ||
         status(q) === filter) &&
       (pathFilter !== 'favorites' || favorites.has(q.id)) &&
       (!collector || collector.has(q.id)) &&
@@ -509,7 +529,11 @@ function renderList() {
     row.setAttribute('aria-label', q.name);
     row.setAttribute('aria-pressed', String(q.id === selected?.id));
     const body = el('div', 'quest-copy');
-    body.append(el('strong', '', q.name));
+    /* A wider rail fits nine names in ten; the tenth is still an ellipsis, so
+       the row carries the full name for a hover and for a screen reader. */
+    const nameEl = el('strong', '', q.name);
+    nameEl.title = q.name;
+    body.append(nameEl);
     const markerCount = objectivePoints(q).length;
     body.append(
       el(
@@ -787,6 +811,33 @@ function renderDetail() {
     renderList();
   };
   titleRow.append(favorite);
+  /* Five hundred quests and you will never do all of them. Hiding one takes it
+     out of every list and off the map; the Hidden status filter is how it comes
+     back, so nothing is ever lost behind this button. */
+  const isHidden = (profile().hiddenQuests || []).includes(q.id);
+  const hideButton = el('button', 'favorite-button hide-button', isHidden ? '◉' : '◌');
+  hideButton.title = isHidden ? 'Show this quest again' : 'Hide this quest from lists and the map';
+  hideButton.setAttribute('aria-label', (isHidden ? 'Show ' : 'Hide ') + q.name);
+  hideButton.setAttribute('aria-pressed', String(isHidden));
+  hideButton.onclick = async () => {
+    const hiddenQuests = new Set(profile().hiddenQuests || []);
+    isHidden ? hiddenQuests.delete(q.id) : hiddenQuests.add(q.id);
+    profile().hiddenQuests = [...hiddenQuests];
+    try {
+      await bridge.questMeta({ mode: data.mode, id: q.id, hidden: !isHidden });
+    } catch {
+      toast('Could not save that.', 'error');
+    }
+    renderDetail();
+    renderList();
+    renderMarkers();
+    toast(
+      isHidden
+        ? q.name + ' is back in your lists.'
+        : q.name + ' hidden. Find it again with the Hidden filter.'
+    );
+  };
+  titleRow.append(hideButton);
   const questPicture = questImages[q.id];
   if (questPicture) {
     const hero = el('img', 'brief-hero');
@@ -811,6 +862,21 @@ function renderDetail() {
   meta.append(el('span', 'pill', questMaps(q)), el('span', 'pill', data.mode.toUpperCase()));
   if (q.minPlayerLevel > 0) meta.append(el('span', 'pill', 'Level ' + q.minPlayerLevel));
   if (source(q) === 'logs') meta.append(el('span', 'pill log-source', 'Updated from logs'));
+  /* The renderer cannot follow a link - navigation is denied and the CSP is
+     default-src 'self' - so the page opens in the real browser through a
+     handler that accepts nothing but a fandom wiki path. 523 of the 541
+     bundled quests have a page; the event quests Ref hands out do not, and
+     those get no button rather than a guessed URL that lands on a 404. */
+  const wikiPage = questWiki[q.id];
+  if (wikiPage) {
+    const wiki = el('button', 'pill wiki-link', 'Wiki ↗');
+    wiki.title = 'Open the wiki page for ' + q.name + ' in your browser';
+    wiki.onclick = () =>
+      Promise.resolve(bridge.openWiki(wikiPage)).catch(() =>
+        toast('Could not open the wiki page.', 'error')
+      );
+    meta.append(wiki);
+  }
   head.append(meta);
   const mapPoints = objectivePoints(q),
     currentName = mapName(currentMapId),
@@ -1018,6 +1084,13 @@ function renderDetail() {
         chain.append(b);
       }
     }
+    const whole = el('button', 'chain-link chain-open', 'See the whole chain →');
+    whole.title = 'Every quest before and after ' + q.name + ', by distance';
+    whole.onclick = () => {
+      renderChain(q);
+      $('chain-dialog').showModal();
+    };
+    chain.append(whole);
     if (collectorPath().has(q.id))
       chain.append(el('span', 'pill kappa-path', 'Collector / Kappa path'));
     panel.append(chain);
@@ -1057,7 +1130,16 @@ function renderDetail() {
     )
   );
   describeBrief(q ? q.name + ' — quest brief' : 'Quest brief');
-  scheduleBriefAlign();
+  /* Now, not next frame. The card is complete and something else may already
+     have a frame pending from before it was built - and the pending one wins,
+     because scheduleBriefAlign returns early when one is queued. That left the
+     card 185px from where it belonged until a later, unrelated alignment
+     happened to fix it. */
+  if (briefAlignFrame) {
+    cancelAnimationFrame(briefAlignFrame);
+    briefAlignFrame = 0;
+  }
+  alignBrief();
 }
 function renderBattlepass() {
   if (!mapDefinition) return;
@@ -1152,9 +1234,15 @@ function focusQuest(q, onlyId) {
   $('focus-label').textContent = q.name + ' · ' + label;
   toast('Showing ' + q.name + ' · ' + label + ' on the map.');
 }
+/* The measured box of `#map-svg`, kept until the element actually resizes.
+ * makeMarker() asks for the scale once per marker, and reading geometry
+ * between DOM writes forces a full re-layout of the SVG each time - 7.57ms of
+ * a 7.7ms renderMarkers, by the sampling profiler. Appending markers cannot
+ * change this box, and panning and zooming move `view`, not the element. */
+let mapSvgBox = null;
 function markerScale() {
-  const box = $('map-svg').getBoundingClientRect();
-  return Math.max(view.w / box.width, view.h / box.height);
+  if (!mapSvgBox) mapSvgBox = $('map-svg').getBoundingClientRect();
+  return Math.max(view.w / mapSvgBox.width, view.h / mapSvgBox.height);
 }
 function makeMarker(p, label, color, shape = 'extract', candidate = false, number = null) {
   const pt = point(p),
@@ -1608,18 +1696,22 @@ function renderLoot() {
     else groups.set(key, { entries: [entry], projected });
   }
   for (const group of groups.values()) {
-    const entriesHere = group.entries,
-      position =
-        entriesHere.length === 1
-          ? group.projected
-          : {
-              x:
-                entriesHere.reduce((n, entry) => n + point(entry.position).x, 0) /
-                entriesHere.length,
-              y:
-                entriesHere.reduce((n, entry) => n + point(entry.position).y, 0) /
-                entriesHere.length
-            };
+    const entriesHere = group.entries;
+    /* The projection is cached on the entry - that is what lootCache is for,
+       and the cull loop above already reads it. Re-projecting here, once per
+       axis, was 6.5ms of a 9ms render on Streets: 2311 entries, 74 clusters,
+       about 4600 projections nothing needed. One pass, cache first. */
+    let position = group.projected;
+    if (entriesHere.length > 1) {
+      let sumX = 0,
+        sumY = 0;
+      for (const entry of entriesHere) {
+        const projected = entry.projected || point(entry.position);
+        sumX += projected.x;
+        sumY += projected.y;
+      }
+      position = { x: sumX / entriesHere.length, y: sumY / entriesHere.length };
+    }
     const label =
         entriesHere.length === 1
           ? lootMarkerLabel(entriesHere[0])
@@ -1737,23 +1829,30 @@ function scheduleDeclutter() {
   declutterAgain = setTimeout(declutterMarkers, 160);
 }
 function declutterMarkers() {
-  const candidates = [];
+  /* Clearing the class invalidates layout and reading a box forces it back,
+     so doing both to one marker before moving to the next made every marker
+     pay for a re-layout of the whole SVG - 4.76ms of a 4.8ms pass, by the
+     sampling profiler. Every write first, then every read: one layout for the
+     pass. Same values, same order, same ranking out. */
+  const nodes = [];
   for (const [id, rank] of markerRanks) {
     const group = $(id);
     if (!group) continue;
-    for (const node of group.children) {
-      node.classList.remove('crowded');
-      const box = node.getBoundingClientRect();
-      if (!box.width || !box.height) continue;
-      const kind = node.dataset.kind;
-      candidates.push({
-        node,
-        rank: id === 'markers' && kind !== 'quest' && kind !== 'cluster' ? wayoutRank : rank,
-        x: box.x + box.width / 2,
-        y: box.y + box.height / 2,
-        reach: Math.max(box.width, box.height) / 2
-      });
-    }
+    for (const node of group.children) nodes.push({ node, id, rank });
+  }
+  for (const item of nodes) item.node.classList.remove('crowded');
+  const candidates = [];
+  for (const { node, id, rank } of nodes) {
+    const box = node.getBoundingClientRect();
+    if (!box.width || !box.height) continue;
+    const kind = node.dataset.kind;
+    candidates.push({
+      node,
+      rank: id === 'markers' && kind !== 'quest' && kind !== 'cluster' ? wayoutRank : rank,
+      x: box.x + box.width / 2,
+      y: box.y + box.height / 2,
+      reach: Math.max(box.width, box.height) / 2
+    });
   }
   candidates.sort((a, b) => a.rank - b.rank);
   const kept = [];
@@ -3330,6 +3429,243 @@ function renderActivity() {
     list.append(row);
   }
 }
+/* What 67 recorded raids can honestly say.
+ *
+ * Deliberately NOT a survival rate: across 132 log folders the only
+ * userMatchOver.status values are Free and Transfer, which describe the match
+ * slot and not whether you lived, so every raid is filed as outcome unknown.
+ * A survival percentage here would be invented, and the panel says so instead
+ * of leaving a gap that looks like a bug. */
+function raidStatsPanel(p) {
+  const raids = (p.raidHistory || []).filter(raid => raid && raid.startedAt);
+  const panel = el('div', 'dashboard-panel raid-stats');
+  panel.append(el('h3', '', 'Raid stats'));
+  if (!raids.length) {
+    panel.append(el('p', 'activity-empty', 'Nothing recorded yet.'));
+    return panel;
+  }
+  const week = Date.now() - 7 * 24 * 3600 * 1000;
+  const lengths = raids
+    .filter(raid => raid.endedAt > raid.startedAt)
+    .map(raid => (raid.endedAt - raid.startedAt) / 60000)
+    .sort((a, b) => a - b);
+  /* median, not mean: one raid left running while the game was alt-tabbed
+   drags an average somewhere no raid has ever been */
+  const median = lengths.length
+    ? lengths.length % 2
+      ? lengths[(lengths.length - 1) / 2]
+      : (lengths[lengths.length / 2 - 1] + lengths[lengths.length / 2]) / 2
+    : 0;
+  const recent = raids.filter(raid => raid.startedAt >= week).length;
+  const summary = el('p', 'raid-stats-summary');
+  summary.append(
+    el('span', '', raids.length + ' raids'),
+    el('span', '', recent + ' in the last 7 days'),
+    el('span', '', lengths.length ? 'median ' + Math.round(median) + ' min' : 'no finished raids')
+  );
+  panel.append(summary);
+
+  const byMap = new Map();
+  for (const raid of raids) {
+    const id = raid.map || 'unknown';
+    byMap.set(id, (byMap.get(id) || 0) + 1);
+  }
+  const ranked = [...byMap.entries()].sort((a, b) => b[1] - a[1]);
+  const most = ranked[0][1];
+  const chart = el('div', 'raid-chart');
+  for (const [id, count] of ranked) {
+    const row = el('div', 'raid-chart-row');
+    const bar = el('span', 'raid-bar');
+    bar.style.width = Math.round((count / most) * 100) + '%';
+    const track = el('span', 'raid-bar-track');
+    track.append(bar);
+    row.append(
+      el('span', 'raid-chart-label', mapName(id)),
+      track,
+      el('span', 'raid-chart-count', String(count))
+    );
+    chart.append(row);
+  }
+  panel.append(chart);
+
+  const carried = raids.filter(raid => Array.isArray(raid.questIds));
+  if (carried.length) {
+    const total = carried.reduce((n, raid) => n + raid.questIds.length, 0);
+    panel.append(
+      el(
+        'p',
+        'raid-stats-note',
+        'You went in with ' +
+          (total / carried.length).toFixed(1) +
+          ' active quests per raid on average.'
+      )
+    );
+  }
+  /* Records written before raids were stamped from the log carry the time the
+     application read the line, not the time the raid ran, and a good few of
+     them came out shorter than a raid can be. They cannot be repaired, so the
+     panel counts them instead of quietly averaging them in. */
+  const impossible = raids.filter(
+    raid => raid.endedAt > raid.startedAt && raid.endedAt - raid.startedAt < 3 * 60000
+  ).length;
+  if (impossible)
+    panel.append(
+      el(
+        'p',
+        'raid-stats-note quiet',
+        impossible +
+          ' of these are under three minutes. Those were stamped when the log was read rather than when the raid ran; a raid recorded now is timed from the log itself.'
+      )
+    );
+  panel.append(
+    el(
+      'p',
+      'raid-stats-note quiet',
+      'Whether you survived is not in the game logs, so it is not shown. The logs record the match slot, not the outcome.'
+    )
+  );
+  return panel;
+}
+
+/* The brief already names what a quest needs and what it unlocks, one step in
+ * each direction. That answers "what is next" and not "how far in am I", which
+ * is the question with 503 quests and 192 done.
+ *
+ * This walks the whole chain both ways and groups it by distance, so a quest
+ * reads as a position in a line of work rather than a pair of neighbours.
+ * Breadth-first with a seen set: the graph has diamonds - two prerequisites
+ * that share a grandparent - and a depth-first walk would print those twice
+ * and, where a catalog has a cycle, not stop. */
+function questChainLayers(quest) {
+  const layer = (seeds, step) => {
+    const seen = new Set([quest.id]);
+    const layers = [];
+    let edge = seeds.filter(q => q && !seen.has(q.id));
+    while (edge.length && layers.length < 12) {
+      for (const q of edge) seen.add(q.id);
+      layers.push(edge);
+      const next = [];
+      for (const q of edge)
+        for (const other of step(q))
+          if (other && !seen.has(other.id) && !next.includes(other)) next.push(other);
+      edge = next;
+    }
+    return layers;
+  };
+  const needs = q =>
+    (q.requirements || [])
+      .map(req => quests.find(x => x.id === requirementId(req)))
+      .filter(Boolean);
+  return {
+    before: layer(needs(quest), needs),
+    after: layer(unlockedBy(quest.id), q => unlockedBy(q.id))
+  };
+}
+/* A whole route, rather than one quest and its neighbours. The bands are
+ * `chainDepth` from the catalogue - how many quests deep into its own line a
+ * quest sits - so the view runs from the openers to the last one, and where
+ * you are on it is the colour of the dots.
+ *
+ * Clicking a quest here opens its own chain, so the two views are a way
+ * through each other rather than two dead ends. */
+function renderQuestSet(label, ids, note, summary) {
+  const content = $('chain-content'),
+    members = quests.filter(quest => ids.has(quest.id));
+  content.replaceChildren();
+  $('chain-title').textContent = label;
+  const done = members.filter(quest => status(quest) === 'completed').length;
+  /* Most routes are honestly described by how many of them are finished. The
+     one built from unfinished work is not - it is 0 of everything by
+     construction - so a row may bring its own sentence. */
+  const headline = summary || done + ' of ' + members.length + ' complete';
+  $('chain-sub').textContent = members.length
+    ? headline + (note ? ' · ' + note : '')
+    : 'Nothing on this route yet.';
+
+  const byDepth = new Map();
+  for (const quest of members) {
+    const depth = Number.isFinite(quest.chainDepth) ? quest.chainDepth : 0;
+    if (!byDepth.has(depth)) byDepth.set(depth, []);
+    byDepth.get(depth).push(quest);
+  }
+  /* Left to right, one column per depth: what opens the line on the left, the
+     end of it on the right. Stacked bands read as a list of groups; columns
+     read as a progression, which is what a chain is. */
+  const track = el('div', 'chain-track');
+  const depths = [...byDepth.keys()].sort((a, b) => a - b);
+  depths.forEach((depth, index) => {
+    const entries = byDepth.get(depth).sort((a, b) => a.name.localeCompare(b.name));
+    /* Not "2 deep" - that is depth in a graph, which is a fact about the data
+       and not a word anyone reading a route wants. A layered diagram numbers
+       its columns, and for a line of quests the honest number is which step of
+       it you are looking at. The one it ends on says so. */
+    const last = index === depths.length - 1;
+    track.append(
+      chainColumn(
+        last && depths.length > 1 ? 'final step' : 'step ' + (index + 1),
+        entries,
+        last ? 'chain-column-last' : ''
+      )
+    );
+  });
+  content.append(track);
+}
+/* One step of a chain: a heading and the quests that sit at that distance,
+ * stacked. Shared by the route view and the single-quest view so both read
+ * the same way round. */
+function chainColumn(heading, entries, extra = '', current = null) {
+  const column = el('div', 'chain-band ' + extra);
+  column.append(el('span', 'chain-depth', heading));
+  const items = el('div', 'chain-items');
+  for (const quest of entries) {
+    const here = current && quest.id === current.id;
+    const node = el('button', 'chain-node ' + status(quest) + (here ? ' chain-here' : ''));
+    node.append(el('span', 'chain-dot'), el('span', 'chain-name', quest.name));
+    node.append(el('span', 'chain-trader', quest.traderName));
+    node.title = quest.name + ' — ' + quest.traderName + ' · ' + status(quest);
+    if (!here)
+      node.onclick = () => {
+        selectQuest(quest);
+        renderChain(quest);
+      };
+    items.append(node);
+  }
+  column.append(items);
+  return column;
+}
+function renderChain(quest) {
+  const { before, after } = questChainLayers(quest),
+    content = $('chain-content');
+  content.replaceChildren();
+  $('chain-title').textContent = quest.name;
+  const behind = before.reduce((n, layer) => n + layer.length, 0),
+    ahead = after.reduce((n, layer) => n + layer.length, 0);
+  $('chain-sub').textContent =
+    behind + ahead
+      ? behind + ' before it, ' + ahead + ' after it'
+      : 'This quest stands on its own.';
+
+  /* Left to right, like the route view: the furthest prerequisite on the left,
+     this quest in the middle, what it unlocks running off to the right. The
+     `before` layers come back nearest-first, so they are reversed. */
+  const track = el('div', 'chain-track');
+  [...before].reverse().forEach((entries, index) => {
+    const steps = before.length - index;
+    track.append(chainColumn(steps === 1 ? 'needs' : steps + ' before', entries));
+  });
+  track.append(chainColumn('this quest', [quest], 'chain-current', quest));
+  after.forEach((entries, index) => {
+    track.append(
+      chainColumn(
+        index === 0 ? 'unlocks' : index + 1 + ' on',
+        entries,
+        index === after.length - 1 ? 'chain-column-last' : ''
+      )
+    );
+  });
+  content.append(track);
+}
+
 function renderDashboard() {
   const p = profile(),
     content = $('dashboard-content'),
@@ -3378,14 +3714,72 @@ function renderDashboard() {
      own numbers, so five different colours added nothing to read and cost the
      greyscale rule the rest of the interface keeps. */
   const barFill = '#9aa0a6';
-  for (const [label, value, total, color] of [
-    ['Quests', done, quests.length, barFill],
-    ['Objectives', objectiveDone, objectiveTotal, barFill],
-    ['Tracked quests', active + done + failed, quests.length, barFill],
-    ['Kappa route', ...routeRow(kappa, barFill)],
-    ['Lightkeeper route', ...routeRow(lightkeeper, barFill)]
+  /* Every bar measures a set of quests, so every bar can open it. The note
+     says what the set is, because "Objectives" counting quests with work left
+     is not obvious from a bar. */
+  const everyQuest = new Set(quests.map(quest => quest.id));
+  const unfinished = new Set(
+    quests
+      .filter(quest => quest.objectives.some(objective => !isDone(objective)))
+      .map(quest => quest.id)
+  );
+  const tracked = new Set(
+    quests.filter(quest => status(quest) !== 'untracked').map(quest => quest.id)
+  );
+  for (const [label, value, total, color, ids, note, summary, route] of [
+    ['Quests', done, quests.length, barFill, everyQuest, 'every quest in the catalogue'],
+    [
+      'Objectives',
+      objectiveDone,
+      objectiveTotal,
+      barFill,
+      unfinished,
+      'the quests with objectives still open',
+      objectiveTotal - objectiveDone + ' objectives left across ' + unfinished.size + ' quests'
+    ],
+    [
+      'Tracked quests',
+      active + done + failed,
+      quests.length,
+      barFill,
+      tracked,
+      'anything you have started, finished or failed'
+    ],
+    [
+      'Kappa route',
+      ...routeRow(kappa, barFill),
+      kappa,
+      'flagged for Kappa in the bundled catalogue',
+      undefined,
+      true
+    ],
+    [
+      'Lightkeeper route',
+      ...routeRow(lightkeeper, barFill),
+      lightkeeper,
+      'flagged for Lightkeeper in the bundled catalogue',
+      undefined,
+      true
+    ]
   ].filter(row => row[2] > 0)) {
-    const row = el('div', 'dashboard-progress');
+    /* A depth tree only says something about a route, and three of these five
+       bars do not measure one - most quests have no prerequisite at all, so
+       the tree came out as a single column holding 59%, 41% and 86% of the
+       set, eleven thousand pixels of list pretending to be a shape.
+
+       Those three are a reading, so they look like one: a plain row, nothing
+       to press. Only the two real routes are buttons. A control that looks
+       pressable and is not is a worse answer than a number that never claimed
+       to be one. */
+    const row = el(route ? 'button' : 'div', 'dashboard-progress');
+    if (route) {
+      row.title = 'Open ' + label.toLowerCase() + ' as a tree';
+      row.onclick = () => {
+        renderQuestSet(label, ids, note, summary);
+        $('dashboard-dialog').close();
+        $('chain-dialog').showModal();
+      };
+    }
     row.append(el('span', '', label), el('small', '', value + ' / ' + total));
     const track = el('div', 'mini-track'),
       fill = el('i');
@@ -3412,6 +3806,7 @@ function renderDashboard() {
     byTrader.append(row);
   }
   content.append(byTrader);
+  content.append(raidStatsPanel(p));
   const history = el('div', 'dashboard-panel raid-history');
   history.append(el('h3', '', 'Recent raids'));
   if (!(p.raidHistory || []).length)
@@ -4287,6 +4682,28 @@ function initMapEvents() {
     setView();
     scheduleBriefAlign();
   });
+  /* The brief is measured to place it, and it is measured before its picture
+     has loaded - the quest image is lazy, so a cached one lands before the
+     measurement and an uncached one after it. When it lands late the card
+     grows under a position chosen for the smaller card, and the objective
+     that was supposed to sit level with the row is hundreds of pixels away.
+
+     Watching the card's own size catches that, and every other late change:
+     a font swapping in, a long objective list reflowing. There is no loop to
+     worry about - alignBrief only writes `--brief-top`, which moves the card
+     without resizing it. */
+  if (typeof ResizeObserver === 'function') {
+    const briefResize = new ResizeObserver(() => scheduleBriefAlign());
+    briefResize.observe($('details'));
+  }
+  /* Drop the cached SVG box when the element really changes size - a window
+     resize, the rail opening, the brief flying out. An observer rather than a
+     list of places to remember, because a missed one would size every marker
+     wrongly and nothing would report it. */
+  if (typeof ResizeObserver === 'function')
+    new ResizeObserver(() => {
+      mapSvgBox = null;
+    }).observe($('map-svg'));
   railLayout.addEventListener('change', scheduleBriefAlign);
   $('quest-list').addEventListener('scroll', scheduleBriefAlign, { passive: true });
 }
@@ -4403,6 +4820,41 @@ async function switchMap(id, { filterQuests = false } = {}) {
   renderHazards();
   updatePosition();
 }
+/* The logs already say which mode the raid is in and which map loaded, and
+ * both were only ever used to decide where to file the raid record. If the
+ * game is in a Seasonal raid on Streets while the application shows PvP quests
+ * for Customs, the application is describing a different game than the one on
+ * the screen - and the person is in a raid, which is the worst possible moment
+ * to ask them to fix it by hand.
+ *
+ * It follows the game rather than asking, and says so, because a profile that
+ * changes itself without a word is worse than the mismatch it fixes. */
+async function adoptObservedSession(mode, map) {
+  if (mode && mode !== data.mode && ['pvp', 'pve', 'seasonal'].includes(mode)) {
+    try {
+      await bridge.mode(mode);
+      data.mode = mode;
+      $('profile').value = mode;
+      await loadMode();
+      if ($('activity-dialog').open) renderActivity();
+      if ($('items-dialog').open) await loadItemsView();
+      toast('Raid is ' + modeLabel(mode) + ' - switched your profile to match.');
+    } catch {
+      toast('Could not follow the raid into ' + modeLabel(mode) + '.', 'error');
+    }
+  }
+  /* A raid start names the map before any screenshot does. Waiting for the
+   * screenshot meant the map followed you into the raid only once you pressed
+   * the screenshot key, which is exactly when you stop needing it to. */
+  if (map && map !== currentMapId && mapDefinitions.some(definition => definition.id === map)) {
+    try {
+      await switchMap(map, { filterQuests: true });
+      toast('Raid started on ' + mapName(map) + '.');
+    } catch {
+      /* the next position update tries again; nothing worth saying */
+    }
+  }
+}
 async function loadMode() {
   const oldId = selected?.id;
   allData = bridge.loadCatalog
@@ -4457,7 +4909,8 @@ async function start() {
       raidHistory: [],
       customMarkers: {},
       questNotes: {},
-      favorites: []
+      favorites: [],
+      hiddenQuests: []
     });
     let d = cached || {
       version: 1,
@@ -4571,11 +5024,20 @@ async function start() {
           input.favorite ? set.add(input.id) : set.delete(input.id);
           p.favorites = [...set];
         }
+        if (typeof input.hidden === 'boolean') {
+          const set = new Set(p.hiddenQuests || []);
+          input.hidden ? set.add(input.id) : set.delete(input.id);
+          p.hiddenQuests = [...set];
+        }
         save();
       },
       customMarkers: async input => {
         d.profiles[input.mode].customMarkers[input.map] = input.markers;
         save();
+      },
+      openWiki: async link => {
+        open(link, '_blank', 'noopener');
+        return true;
       },
       raidEvent: async () => null,
       exportBackup: async () => null,
@@ -4614,13 +5076,15 @@ async function start() {
     raidHistory: [],
     customMarkers: {},
     questNotes: {},
-    favorites: []
+    favorites: [],
+    hiddenQuests: []
   };
   for (const mode of ['pvp', 'pve', 'seasonal']) {
     const p = data.profiles[mode];
     p.questSources ||= {};
     p.questSync ||= { seenEvents: [], lastEventAt: null, lastScanAt: null, history: [] };
     p.questSync.history ||= [];
+    p.hiddenQuests ||= [];
     p.raidHidden ||= {};
     p.raidChecklist ||= {};
     p.raidPlans ||= {};
@@ -4695,7 +5159,8 @@ async function start() {
     traderCatalog,
     keyCatalog,
     labKeycards,
-    specialTracks
+    specialTracks,
+    questWiki
   ] = await Promise.all([
     fetch('data/maps.json').then(r => r.json()),
     fetch('data/quest-images.json')
@@ -4719,7 +5184,10 @@ async function start() {
     fetch('data/lab-keycards.json')
       .then(r => r.json())
       .then(doc => doc.keycards),
-    fetch('data/special-tracks.json').then(r => r.json())
+    fetch('data/special-tracks.json').then(r => r.json()),
+    fetch('data/quest-wiki.json')
+      .then(r => r.json())
+      .catch(() => ({}))
   ]);
   const ordered = [...mapDefinitions].sort((a, b) => a.displayName.localeCompare(b.displayName));
   $('map-filter').replaceChildren(
@@ -4903,11 +5371,7 @@ async function start() {
       await loadMode();
       if ($('activity-dialog').open) renderActivity();
       if ($('items-dialog').open) await loadItemsView();
-      toast(
-        'Switched to ' +
-          (next === 'seasonal' ? 'Seasonal/Kord Breach' : next.toUpperCase()) +
-          ' progress.'
-      );
+      toast('Switched to ' + modeLabel(next) + ' progress.');
     } catch {
       toast('Could not switch profiles.', 'error');
     }
@@ -4922,6 +5386,7 @@ async function start() {
     .forEach(b => (b.onclick = () => $('connection-dialog').close()));
   $('activity-button').onclick = openActivity;
   $('close-activity').onclick = () => $('activity-dialog').close();
+  $('close-chain').onclick = () => $('chain-dialog').close();
   $('items-button').onclick = openItems;
   $('close-items').onclick = () => $('items-dialog').close();
   $('scan-item')?.addEventListener('click', runItemScan);
@@ -5026,13 +5491,7 @@ async function start() {
       activityUnread += current.changed || 0;
       updateActivityBadge();
       if ($('activity-dialog').open) renderActivity();
-      toast(
-        'Logs updated · ' +
-          current.active +
-          ' active ' +
-          (data.mode === 'seasonal' ? 'Seasonal/Kord Breach' : data.mode.toUpperCase()) +
-          ' quests.'
-      );
+      toast('Logs updated · ' + current.active + ' active ' + modeLabel(data.mode) + ' quests.');
     } catch (e) {
       toast(
         'Could not update logs: ' +
@@ -5140,12 +5599,15 @@ async function start() {
     if (previousRaid !== lastRaidState && lastRaidState === 'started') {
       const observedMode = ['pvp', 'pve', 'seasonal'].includes(state.mode) ? state.mode : data.mode,
         observedMap = state.map || state.position?.map || currentMapId;
+      adoptObservedSession(observedMode, observedMap);
       bridge
         .raidEvent({
           mode: observedMode,
           type: 'start',
           map: observedMap,
-          at: Date.now(),
+          /* the log line knows when this happened; Date.now() only knows when
+             the application got round to reading it */
+          at: state.raidAt || Date.now(),
           questIds: quests
             .filter(
               q =>
@@ -5162,18 +5624,19 @@ async function start() {
     } else if (previousRaid === 'started' && lastRaidState === 'ended') {
       const observedMode = ['pvp', 'pve', 'seasonal'].includes(state.mode) ? state.mode : data.mode;
       bridge
-        .raidEvent({ mode: observedMode, type: 'end', at: Date.now(), outcome: 'unknown' })
+        .raidEvent({
+          mode: observedMode,
+          type: 'end',
+          at: state.raidAt || Date.now(),
+          outcome: 'unknown'
+        })
         .then(raid => {
           if (!raid) return;
           const index = data.profiles[observedMode].raidHistory.findIndex(
             item => item.id === raid.id
           );
           if (index >= 0) data.profiles[observedMode].raidHistory[index] = raid;
-          toast(
-            'Raid recorded in ' +
-              (observedMode === 'seasonal' ? 'Seasonal/Kord Breach' : observedMode.toUpperCase()) +
-              ' history.'
-          );
+          toast('Raid recorded in ' + modeLabel(observedMode) + ' history.');
         })
         .catch(() => {});
     }
@@ -5237,6 +5700,34 @@ async function start() {
   });
   updateActivityBadge();
   setInterval(updateAge, 1000);
+  /* A <select> keeps focus after you pick from it, and a focused select eats
+     single-letter shortcuts - it spends them on type-ahead, so F in the map
+     picker jumps to Factory instead of focusing the map. Picking a map is the
+     first thing anyone does here, which left F looking broken from then on.
+
+     Focus goes back to the document after a change the pointer started. A
+     keyboard user keeps it, because they are still navigating the control and
+     taking focus away mid-arrow would be far worse than a dead shortcut. */
+  let selectReachedByPointer = null;
+  document.addEventListener(
+    'pointerdown',
+    event => {
+      selectReachedByPointer =
+        event.target instanceof Element ? event.target.closest('select') : null;
+    },
+    true
+  );
+  document.addEventListener(
+    'change',
+    event => {
+      if (event.target instanceof HTMLSelectElement && event.target === selectReachedByPointer) {
+        event.target.blur();
+        selectReachedByPointer = null;
+      }
+    },
+    true
+  );
+
   document.addEventListener('keydown', e => {
     const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName),
       dialogOpen = !!document.querySelector('dialog[open]');

@@ -23,7 +23,8 @@ const iconDir = path.join(root, 'app/assets/keys');
 const wanted = new Set();
 for (const file of fs.readdirSync(path.join(dataDir, 'poi'))) {
   const doc = JSON.parse(fs.readFileSync(path.join(dataDir, 'poi', file), 'utf8'));
-  for (const poi of doc.pois) if (poi.kind === 'locked-door') for (const id of poi.keyIds || []) wanted.add(id);
+  for (const poi of doc.pois)
+    if (poi.kind === 'locked-door') for (const id of poi.keyIds || []) wanted.add(id);
 }
 // Quest briefs name keys the objectives require, and the raid kit needs to turn
 // those names back into ids to find the doors, so quest keys are included too.
@@ -44,7 +45,9 @@ for (const file of ['items-seasonal.json', 'items-pvp.json', 'items-pve.json']) 
 }
 
 const missing = [...wanted].filter(id => !names.has(id));
-const keys = Object.fromEntries([...names.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name)));
+const keys = Object.fromEntries(
+  [...names.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))
+);
 const doc = {
   schemaVersion: 1,
   generatedAt: new Date().toISOString(),
@@ -70,12 +73,18 @@ async function fetchIcons() {
     const response = await fetch('https://assets.tarkov.dev/' + id + '-icon.webp');
     if (!response.ok) throw Error(response.status + ' for key icon ' + id);
     const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length < 200 || bytes.subarray(0, 4).toString() !== 'RIFF' || bytes.subarray(8, 12).toString() !== 'WEBP')
+    if (
+      bytes.length < 200 ||
+      bytes.subarray(0, 4).toString() !== 'RIFF' ||
+      bytes.subarray(8, 12).toString() !== 'WEBP'
+    )
       throw Error('Not a WebP image for key ' + id);
     fs.writeFileSync(file, bytes);
     saved++;
   }
-  console.log('key icons downloaded: ' + saved + ', bundled in total: ' + fs.readdirSync(iconDir).length);
+  console.log(
+    'key icons downloaded: ' + saved + ', bundled in total: ' + fs.readdirSync(iconDir).length
+  );
 }
 // Icons are fetched before the catalogue is written, so the icon paths land in
 // the same pass. An early process.exit() here once killed the download midway.
@@ -83,7 +92,9 @@ function writeCatalog() {
   for (const [id, key] of Object.entries(keys))
     if (fs.existsSync(path.join(iconDir, id + '.webp'))) key.icon = 'assets/keys/' + id + '.webp';
   fs.writeFileSync(path.join(dataDir, 'keys.json'), JSON.stringify(doc));
-  console.log('wrote app/data/keys.json (' + (JSON.stringify(doc).length / 1024).toFixed(1) + ' KB)');
+  console.log(
+    'wrote app/data/keys.json (' + (JSON.stringify(doc).length / 1024).toFixed(1) + ' KB)'
+  );
 }
 (async () => {
   if (downloadIcons) await fetchIcons();
