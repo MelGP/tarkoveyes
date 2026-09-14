@@ -99,25 +99,6 @@ After that, take a screenshot in raid and your position appears on the map. The
 app reads the filename, which already contains the coordinates. It does not read
 the image.
 
-### Upgrading from a Raid Notes install
-
-The application was called Raid Notes until September 2026. The old name
-survived on disk for a while after that, because `%APPDATA%\RaidNotes` held the
-only copy of the real profile. Nothing says Raid Notes any more.
-
-Coming from an older build, the first launch moves your save. It copies
-`%APPDATA%\RaidNotes\local-data` to `%APPDATA%\TarkovEyes\local-data`, and only
-when the new folder does not exist, so a later launch cannot overwrite live data
-with a stale copy. It copies rather than moves: the old folder stays where it
-was, and you can delete it once you are satisfied.
-
-Only `local-data` comes across. The rest of that folder is Chromium's cache and
-is rebuilt on demand.
-
-Exported backups carry a `tarkoveyes-backup` marker instead of
-`raid-notes-backup`. Nothing reads the marker — importing parses and normalises
-the file — so backups from older builds still import unchanged.
-
 ---
 
 ## 🧭 What it does
