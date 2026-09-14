@@ -25,11 +25,6 @@ const manifest = JSON.parse(
 const lock = JSON.parse(
   fs.readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')
 );
-import { createRequire } from 'node:module';
-/* A specifier this file only knows at runtime. createRequire is how ESM
-   resolves one; the alternative is a dynamic import(), which is async and
-   would turn every caller into a promise for no gain here. */
-const require = createRequire(import.meta.url);
 for (const [relative, metadata] of Object.entries(lock.packages || {})) {
   if (!relative.startsWith('node_modules/') || metadata.dev) continue;
   const source = path.join(root, relative),
@@ -74,16 +69,42 @@ if (!fs.existsSync(icon)) {
   console.warn('No app/assets/TarkovEyes.ico - run tools/build/build-icon.js first.');
 } else {
   let rcedit = null;
+  let wrongShape = '';
   try {
-    rcedit = require('rcedit');
+    /* This was `require('rcedit')` before the ES module conversion, which
+       returned the function directly. The branch only runs when rcedit is
+       installed, so nothing exercised it, and the packager died with "rcedit
+       is not a function" the first time someone did install it.
+       rcedit 5 exports a NAMED `rcedit`, not a default, so all three shapes
+       are accepted rather than guessing which one this version uses. */
+    const loaded = await import('rcedit');
+    rcedit = typeof loaded === 'function' ? loaded : (loaded.default ?? loaded.rcedit);
+    if (typeof rcedit !== 'function') {
+      wrongShape =
+        'rcedit is installed but exports nothing callable (' +
+        Object.keys(loaded).join(', ') +
+        '), so TarkovEyes.exe keeps Electron’s icon.';
+      rcedit = null;
+    }
   } catch {
     /* not installed, which is the normal case here */
   }
-  if (rcedit) {
-    rcedit(path.join(out, 'TarkovEyes.exe'), { icon }).then(
-      () => console.log('Stamped the icon into TarkovEyes.exe'),
-      error => console.warn('Could not stamp the icon: ' + error.message)
-    );
+  if (wrongShape) {
+    /* Reported rather than folded into "not installed". Silently treating a
+       shape mismatch as an absent package is how the previous version hid
+       its own bug. */
+    console.warn(wrongShape);
+  } else if (typeof rcedit === 'function') {
+    /* Awaited, because the SHA-256 inventory below hashes this exe. As a
+       floating promise it recorded the bytes from before the icon was
+       stamped, so the shipped manifest described a file that no longer
+       existed. */
+    try {
+      await rcedit(path.join(out, 'TarkovEyes.exe'), { icon });
+      console.log('Stamped the icon into TarkovEyes.exe');
+    } catch (error) {
+      console.warn('Could not stamp the icon: ' + error.message);
+    }
   } else {
     console.warn(
       "rcedit is not installed, so TarkovEyes.exe keeps Electron's icon.\n" +

@@ -28,14 +28,11 @@ https://github.com/the-hideout/TarkovMonitor — GPL-3.0. Its public documentati
 
 ## Electron
 
-Electron and Chromium notices are included in the executable distribution as `LICENSE` and `LICENSES.chromium.html`; npm dependency versions are locked in `source/package-lock.json`.
+Electron and Chromium notices are included in the executable distribution as `LICENSE` and `LICENSES.chromium.html`; npm dependency versions are locked in `package-lock.json`.
 
 ## Offline OCR
 
 Tesseract.js and tesseract.js-core, Apache License 2.0, https://github.com/naptha/tesseract.js and https://github.com/naptha/tesseract.js-core. English trained data is bundled from `@tesseract.js-data/eng`, derived from the Tesseract tessdata project. OCR runs locally only after the user chooses an image.
-
-Escape from Tarkov is owned by Battlestate Games. This project is unofficial and unaffiliated. No official approval is claimed.
-
 
 ## Battle Pass spawn markers
 
@@ -46,3 +43,6 @@ Adaptations: source image coordinates converted and manually aligned approximate
 Item names and document icons: tarkov.dev (https://tarkov.dev); Escape from Tarkov game artwork remains property of Battlestate Games.
 Reference map positions are from Perofunyang, not from tarkov.dev world-coordinate loot data.
 
+## Escape from Tarkov
+
+Escape from Tarkov is owned by Battlestate Games. This project is unofficial and unaffiliated. No official approval is claimed.
