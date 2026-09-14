@@ -57,22 +57,6 @@ export const objectiveIds = new Set(
 );
 app.setName('TarkovEyes');
 
-/* The save used to live under %APPDATA%\RaidNotes, from before the rename, and
- * it holds the only copy of the real profile - every completed quest, every
- * recorded raid. Pointing at the new folder without moving the old one would
- * orphan the lot, which is why this was left alone for so long.
- *
- * So it moves rather than being repointed, and the rules are:
- *   - only when the new folder does not exist, so a second launch never
- *     overwrites live data with a stale copy;
- *   - copy, never move, so the old folder survives as a way back;
- *   - only local-data, which is ours. Everything else under userData is
- *     Chromium's cache and is rebuilt on demand; copying 5 MB of GPU caches
- *     into a fresh profile would import staleness, not history;
- *   - failure is fatal and loud. A silent failure here starts you on an empty
- *     profile with your real one still on disk, and that reads as data loss.
- */
-
 export function catalogReport(doc) {
   const questIds = new Set(),
     objectiveIdsFound = new Set(),

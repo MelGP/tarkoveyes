@@ -49,15 +49,14 @@ export let win;
 export let store;
 export let observer;
 export const userData = path.join(app.getPath('appData'), 'TarkovEyes');
-const legacyUserData = path.join(app.getPath('appData'), 'RaidNotes');
-if (!fs.existsSync(userData) && fs.existsSync(path.join(legacyUserData, 'local-data'))) {
-  fs.mkdirSync(userData, { recursive: true });
-  fs.cpSync(path.join(legacyUserData, 'local-data'), path.join(userData, 'local-data'), {
-    recursive: true
-  });
-  console.log('Moved the saved profile from ' + legacyUserData + ' to ' + userData);
-}
 app.setPath('userData', userData);
+/* Chromium keeps its caches, its network state and the renderer's localStorage
+   beside our own files, which left sixteen of its folders sitting next to the
+   one that matters. sessionData gathers all of it under TarkovEyes\cache, so
+   the profile folder holds local-data and that. Deleting cache costs the two
+   renderer-only preferences (Battle Pass categories, hide finished objectives)
+   and nothing else - progress.json is in local-data and is never touched. */
+app.setPath('sessionData', path.join(userData, 'cache'));
 function validateSender(event) {
   if (event.sender !== win.webContents) throw Error('Unknown caller');
 }
