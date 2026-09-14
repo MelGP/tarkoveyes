@@ -15,6 +15,7 @@ import { $, el, svg, toast } from './dom.js';
 import {
   availableBecause,
   isDone,
+  objectiveStateKnown,
   mapName,
   mappedElsewhere,
   objectivePoints,
@@ -327,16 +328,36 @@ export function renderDetail() {
   }
   const section = el('div', 'detail-section detail-objectives'),
     title = el('div', 'section-title');
+  /* "0 / 4" on a quest nothing is recorded for reads as "you have done none
+     of these", which is not what the application knows - it knows nothing.
+     The counter and the bar appear once there is something real to count. */
+  const known = q.objectives.some(objectiveStateKnown),
+    doneHere = q.objectives.filter(isDone).length;
   title.append(
     el('span', 'eyebrow', 'OBJECTIVES'),
-    el('span', 'count', q.objectives.filter(isDone).length + ' / ' + q.objectives.length)
+    el(
+      'span',
+      'count',
+      known
+        ? doneHere + ' / ' + q.objectives.length
+        : q.objectives.length + (q.objectives.length === 1 ? ' objective' : ' objectives')
+    )
   );
   section.append(title);
-  const objectiveMeter = el('progress', 'objective-meter');
-  objectiveMeter.max = Math.max(1, q.objectives.length);
-  objectiveMeter.value = q.objectives.filter(isDone).length;
-  objectiveMeter.setAttribute('aria-label', 'Completed objectives');
-  section.append(objectiveMeter);
+  if (known) {
+    const objectiveMeter = el('progress', 'objective-meter');
+    objectiveMeter.max = Math.max(1, q.objectives.length);
+    objectiveMeter.value = doneHere;
+    objectiveMeter.setAttribute('aria-label', 'Completed objectives');
+    section.append(objectiveMeter);
+  } else
+    section.append(
+      el(
+        'small',
+        'objective-unknown',
+        'Nothing recorded yet. The game logs carry quest status but never objective progress, so this has to come from a Tasks screenshot scan or from ticking a box below.'
+      )
+    );
   q.objectives.forEach((o, i) => {
     const progress = objectiveProgress(o),
       row = el(

@@ -337,3 +337,20 @@
   font-size: 10px;
   line-height: 1.5;
 }
+
+/* ==========================================================================
+   AN UNRECORDED OBJECTIVE IS NOT A ZERO
+
+   The brief counted "0 / 4" for every active quest, because the profile holds
+   five objective records against 1797 objectives. The game logs carry quest
+   status and never condition state, so that zero was the application stating
+   something it does not know. The counter now says how many objectives there
+   are, and this line says why there is no progress beside them.
+   ========================================================================== */
+.objective-unknown {
+  display: block;
+  margin: 4px 0 10px;
+  color: var(--ink-5);
+  font-size: 10px;
+  line-height: 1.55;
+}

@@ -185,6 +185,17 @@ export function isDoneRecorded(o) {
   return !!questId && profile().quests[questId] === 'completed';
 }
 
+/* Whether anything is KNOWN about this objective, which is a different
+   question from whether it is done. The logs carry quest status and never
+   condition state, so an objective on an active quest is usually unrecorded -
+   and reporting that as "0 done" is a claim the application cannot support. */
+export function objectiveStateKnown(o) {
+  if (profile().objectives[o.id] || profile().objectiveProgress?.[o.id]) return true;
+  if (o.sourceQuestId && profile().quests[o.sourceQuestId] === 'completed') return true;
+  const questId = objectiveOwner.get(o.id);
+  return !!questId && profile().quests[questId] === 'completed';
+}
+
 export function objectiveProgress(o) {
   const saved = profile().objectiveProgress?.[o.id],
     target = saved?.target || objectiveTarget(o);
