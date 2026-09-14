@@ -69,22 +69,14 @@ delete the folder and it is gone.
 npm run package
 ```
 
-That writes `src/dist/TarkovEyes-win32-x64/`: `TarkovEyes.exe`, 1,963 files, and
+That writes `src/dist/TarkovEyes-win32-x64/`: `TarkovEyes.exe`, 2,005 files, and
 a SHA-256 manifest of every one of them. Copy the folder anywhere and run the
 `.exe`; no Node.js is needed on that machine. Keep the folder together — moving
 the `.exe` on its own will not work.
 
-The build reports that `rcedit` is not installed and that the executable keeps
-Electron's default icon. The build is still complete. Stamping the app's own
-icon into the executable needs a Windows resource editor:
-
-```bash
-npm i -D rcedit
-npm run package
-```
-
-The packager reports what it could not do rather than shipping the wrong icon
-silently.
+The application's own icon is stamped into the executable by `rcedit`, a dev
+dependency. Without it the build still completes and reports what it could not
+do, rather than shipping Electron's default icon silently.
 
 Both ways read and write the same save folder,
 `%APPDATA%\TarkovEyes\local-data`, so your progress follows you between them.

@@ -16,7 +16,8 @@
     "update-items": "node tools/update/update-items.js"
   },
   "devDependencies": {
-    "electron": "^44.2.0"
+    "electron": "^44.2.0",
+    "rcedit": "^5.0.2"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
