@@ -4,7 +4,7 @@
     {
       "name": "tarkoveyes-preview",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["preview.cjs"],
+      "runtimeArgs": ["preview.js"],
       "port": 4318
     }
   ]

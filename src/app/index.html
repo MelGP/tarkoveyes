@@ -3,7 +3,19 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'">
-  <title>TarkovEyes</title><link rel="stylesheet" href="app.css"><link rel="stylesheet" href="battlepass.css">
+  <title>TarkovEyes</title>
+  <!-- The order of these eight is the cascade. app.css was split into them
+       without moving a byte, later rules still win, and battlepass.css stays
+       last as it always has. Do not reorder, and add anything new at the end. -->
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/legacy.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/map.css">
+  <link rel="stylesheet" href="css/rails.css">
+  <link rel="stylesheet" href="css/type.css">
+  <link rel="stylesheet" href="css/corrections.css">
+  <link rel="stylesheet" href="css/features.css">
+  <link rel="stylesheet" href="battlepass.css">
 </head>
 <body>
 <header class="topbar">
@@ -43,8 +55,8 @@
 <dialog id="about-dialog"><img class="about-logo" src="assets/logo.png" alt="TarkovEyes"><div class="dialog-header"><div><span class="eyebrow">TARKOVEYES / 0.21.0</span><h2>Your personal raid notebook.</h2></div><button id="close-about" aria-label="Close about">×</button></div><p>A standalone multi-map, quest and item-price companion with isolated PvP, PvE and Seasonal/Kord Breach profiles. Reads screenshot filenames, selected game logs and a temporary inventory crop when you press Shift+F8. OCR runs inside the app and the crop is not saved. No game memory access, game modification, input automation or accounts. Item prices connect only to tarkov.dev: once when the app opens, and whenever you press Update prices.</p><p>This is an unofficial companion. There is no BSG or BattlEye endorsement or guarantee against sanctions.</p><h3>Data & credits</h3><p>Map artwork: Shebuka and tarkov-dev-svg-maps contributors, CC BY-NC-SA 4.0 with upstream usage restrictions. Quest, map, POI and item-price metadata: tarkov.dev. Quest and item snapshots were refreshed for this build and show their own update time. OCR: Tesseract.js and bundled English language data. Data may change after game updates.</p><p>Battle Pass reference maps, locations and photos: © 2026 Perofunyang, CC BY-NC 4.0. Positions approximately aligned to the tactical map; location photos retain the original reference. Item names and icons: tarkov.dev. Parser format references: Raid Signal and TarkovMonitor. Full notices are included in the project’s licenses folder. This build is for personal, noncommercial use.</p></dialog>
 <dialog id="bp-photo-dialog" aria-label="Battle Pass location photo"><button id="bp-close-photo">Close photo ×</button><img id="bp-full-photo" alt="Battle Pass location"></dialog>
 <div id="toast" role="status" hidden></div>
-<script src="battlepass.js"></script>
-<script src="app.js"></script>
+<script type="module" src="battlepass.js"></script>
+<script type="module" src="app.js"></script>
 </body></html>
 
 

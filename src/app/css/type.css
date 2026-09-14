@@ -1,0 +1,154 @@
+/* type.css
+ *
+ * Six weights of text, not forty-six.
+ *
+ * Part 6 of app.css, which was split without moving a byte. index.html
+ * loads these in order and later rules still win, so anything that needs
+ * to outrank what is here belongs in a LATER file, not edited into this
+ * one. Not Prettier-formatted, on purpose.
+ */
+/* ==========================================================================
+   TEXT HAS SIX WEIGHTS, NOT FORTY-SIX
+   --------------------------------------------------------------------------
+   Counted on one screen - the rail, the brief, the map chrome - 122 pieces of
+   text were painted in 46 different colours. Not 46 levels of emphasis: 46
+   near-misses. Six different whites between luminance 237 and 244, so the words
+   "Broadcast - Part 5" appeared at three of them at once, in the brief title,
+   in the rail row and on the map. Eight more between 180 and 199. Nobody can
+   see a difference of two luminance units; what they see is that nothing is
+   deliberate.
+
+   This is the same problem the design-scale section found in corner radii and
+   paddings, and it takes the same answer: a scale, applied at the end, that
+   restyles nothing and only says which of six weights each thing is.
+
+     --ink-1  what you are reading now
+     --ink-2  the body of a panel
+     --ink-3  labels and counts beside it
+     --ink-4  supporting lines under a heading
+     --ink-5  eyebrows, captions, the trader under a quest name
+     --ink-6  fine print
+
+   Semantic colour is untouched: the red on a failed row, the green on a
+   completed one, `--live` on the quest you are in. Dark-on-light text inside
+   the primary buttons is untouched too - it is not on this scale.
+
+   A leftover the warm sweep missed is fixed here as a side effect. Two of those
+   whites were warm - rgb(242,239,230) and rgb(238,238,230) - but only by eight
+   and twelve points of red over blue, under the saturation the sweep required,
+   so they read as khaki and were never reported.
+   ========================================================================== */
+:root {
+  --ink-1: #f2f4f5;
+  --ink-2: #dfe3e6;
+  --ink-3: #bcc1c5;
+  --ink-4: #a4a9ae;
+  --ink-5: #8a8f94;
+  --ink-6: #6f7479;
+}
+
+/* 1 — what you are reading */
+.detail-head h2,
+#focus-label,
+.quest-row strong,
+.dialog-header h2,
+#dashboard-title,
+#location {
+  color: var(--ink-1);
+}
+
+/* 2 — the body of a panel */
+.objective p,
+.connection-head strong,
+.map-shortcuts kbd,
+.quest-filter-panel > summary > span,
+.objective button,
+.reward,
+.favorite-button,
+.loot-layer-options label,
+.layers label {
+  color: var(--ink-2);
+}
+
+/* 3 — labels and counts beside it */
+.count,
+.pill,
+.layer-presets button,
+.section-title,
+.name-symbol,
+.progress-control span,
+.bp-layer-option b,
+.chip {
+  color: var(--ink-3);
+}
+
+/* 4 — supporting lines under a heading */
+.objective small,
+.loot-intel strong,
+.loot-intel .eyebrow,
+.detail-head .eyebrow,
+#bp-floor-hint,
+#progress-label {
+  color: var(--ink-4);
+}
+
+/* 5 — eyebrows and captions. Greyscale like the rest: the blue these carried
+   predates the decision that the chrome has no colour, and it was never listed
+   among the exceptions that keep theirs. */
+.eyebrow,
+.map-heading .eyebrow,
+.map-toolbar .eyebrow,
+.quest-row .quest-trader,
+.connection-head small,
+.layer-data-note,
+.detail-note,
+.bp-layer-content p,
+.search kbd {
+  color: var(--ink-5);
+}
+
+/* 6 — fine print */
+.quest-row .quest-points,
+.map-shortcuts > span,
+.map-footer,
+#quest-sync {
+  color: var(--ink-6);
+}
+
+/* The stragglers the first pass left: controls and headings each carrying a
+   colour of their own. "Updated from logs" was still green - the last of the
+   accent that used to be a chip on every row, and the only thing on the screen
+   pretending a routine fact is good news. */
+.toolbar-actions .map-tool,
+.connection-actions button,
+.quest-chain a,
+.quest-chain button,
+.raid-kit-row,
+.raid-kit-note {
+  color: var(--ink-3);
+}
+.quest-heading .eyebrow,
+.summary-title .eyebrow,
+.section-title .eyebrow,
+.quest-row .log-source,
+.log-source,
+#bp-floor-hint,
+.layer-data-note {
+  color: var(--ink-5);
+}
+#active-map-label {
+  color: var(--ink-1);
+}
+.name-symbol {
+  color: var(--ink-3);
+}
+
+/* The last colour in the chrome that was not semantic: "Updated from logs" in
+   the quest brief's meta row, still the green it wore when it was a chip on
+   every quest row. Its rule uses `!important`, so the correction has to as
+   well - the same convention as the featured loot rows above. Where a quest's
+   status came from is a fact about the record, not good news. */
+.detail-meta .log-source,
+.log-source {
+  color: var(--ink-5) !important;
+}

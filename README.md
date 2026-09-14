@@ -314,36 +314,57 @@ tarkov/
 └─ screenshots/  the images in this file
 ```
 
-Inside `src/`:
+Inside `src/` there are three source areas, and the line between them is real:
 
 ```text
-main.cjs      Electron main process; owns every native capability
-preload.cjs   the narrow context-isolated bridge to the renderer
-core.cjs      store, screenshot and log parsing, the observer
-items.cjs     item catalogue and OCR matching
-imaging.cjs   crop preparation before OCR
-appearance.cjs  per-item colour signatures
-templates.cjs   item artwork templates
-preview.cjs   static server for browser-based development
-app/          the renderer: HTML, CSS, JS, maps, catalogues, assets
-test/         the Node test suite
+main/         the Electron main process — the only code that touches the OS
+  main.js       the entry point; the window, the IPC handlers, the observer
+  catalogs.js   quest and item catalogues, and the one outbound request
+  item-hotkey.js  Shift+F8: capture, read, rank by name then by artwork
+  ocr.js        the local Tesseract worker
+  paths.js      where the bundled assets are — a leaf, imported by the others
+  preload.cjs   the narrow context-isolated bridge to the renderer
+
+lib/          no Electron, no DOM, nothing imported from either — unit-tested
+  core.js       store, screenshot and log parsing, the observer
+  items.js      item catalogue and OCR matching
+  imaging.js    crop preparation before OCR
+  appearance.js per-item colour signatures
+  templates.js  item artwork templates
+
+app/          the renderer
+  index.html    the shell
+  app.js        the entry; boot, and what is left after the split
+  css/          eight stylesheets whose ORDER is the cascade
+  ...           22 more modules, one per thing the application does
+  data/ assets/ maps, catalogues, artwork, pictures
+
+test/         the Node suite
 licenses/     upstream licences and data-source records
 tools/
   build/      generate bundled data and assets from what is here
   update/     refresh bundled data from tarkov.dev
-  dev/        harnesses and inspection; ship nothing
+  dev/        harnesses, the preview server, inspection; ship nothing
   release/    build a portable app, sync a built copy beside src/
   sources/    pinned upstream inputs — parsed, never executed
 ```
 
+`lib/` is separate because those five modules import nothing at all, not even
+each other, so they can be tested directly. Importing anything from `main/`
+starts Electron, which is why none of it is unit-tested and all of it is
+covered by the checks that drive the running application instead.
+
 The renderer is plain HTML, CSS and JavaScript. No framework, no bundler, no
 build step for the UI.
 
-`main.cjs` owns everything native — the file watchers, the OCR, the screen
-capture for `Shift+F8`, the one outbound request — and the renderer reaches it
-only through the small `window.companion` bridge in `preload.cjs`. Anything new
+`main/` owns everything native — the file watchers, the OCR, the screen capture
+for `Shift+F8`, the one outbound request — and the renderer reaches it only
+through the small `window.companion` bridge in `main/preload.cjs`. Anything new
 that needs the operating system goes through a validated IPC handler and that
 bridge; Node APIs are never exposed to the page.
+
+`main/` and `lib/` are copied into a build as whole directories, so a new
+module in either ships without anyone having to list it anywhere.
 
 Progress lives in `%APPDATA%\TarkovEyes\local-data\progress.json`, isolated per
 profile, with import, export and recovery from a damaged file.
@@ -354,7 +375,7 @@ profile, with import, export and recovery from a damaged file.
 
 ```bash
 cd src
-npm test             # the Node suite — 65 tests
+npm test             # the Node suite — 67 tests
 npm start            # run the source version under Electron
 npm run preview      # serve the renderer at http://127.0.0.1:4318/
 npm run package      # build a portable app into src/dist/
@@ -391,8 +412,11 @@ renders anything. Serve the preview, or drive the installed application over
 **Run one harness at a time.** Two suites driving the same application look
 exactly like a real map-loading bug.
 
-`app/app.css` is deliberately not Prettier-formatted; the project formats
-JavaScript only.
+The stylesheets in `app/css/` are deliberately not Prettier-formatted; the
+project formats JavaScript only. Their **order in `index.html` is the
+cascade** - later rules are meant to win - so a correction belongs in a later
+file rather than edited into an earlier one, and reordering the links is a
+silent restyling of the whole application. A test asserts the order.
 
 ---
 

@@ -1,0 +1,607 @@
+/* corrections.css
+ *
+ * Three layout corrections, newest last: the toast that looked like a confirmation, the connection card moving into empty topbar, and Focus leaving the map 256px wide.
+ *
+ * Part 7 of app.css, which was split without moving a byte. index.html
+ * loads these in order and later rules still win, so anything that needs
+ * to outrank what is here belongs in a LATER file, not edited into this
+ * one. Not Prettier-formatted, on purpose.
+ */
+/* ============================================================================
+   A FAILURE IS NOT AN ANNOUNCEMENT, AND A LEGEND HAS TO MATCH THE MAP
+
+   Three things a cascade sweep found. It ranks every rule that declares a
+   colour by specificity and order, works out which one actually WINS on each
+   element across fourteen states, and then asks which of the winners are not
+   neutral. 158 came back; most sit at 8-13 points of saturation, which is the
+   cool grey the palette is made of (`--ink-1` is #f2f4f5 - bluer than it is
+   red). The warm ones are the leftovers, because nothing in this design is
+   warm except `--live`.
+   ============================================================================ */
+
+/* 1. THE TOAST WAS THE SECOND AMBER, AND IT SAID EVERYTHING IN ONE VOICE.
+
+   #e9bf7b at 110 points of saturation - not `--live` (#e9b969) but close
+   enough to read as it, which is the worse of the two failures: it both
+   dilutes the one colour that means "now" and misses it. And the same slab
+   carried "Marker added." and "Could not save progress. Check available disk
+   space." A confirmation and a data-loss warning are not the same sentence and
+   must not look alike. `toast()` takes a tone now; the fifteen failure sites
+   pass it. */
+#toast {
+  background: #12161acc;
+  color: var(--ink-1);
+  border: 1px solid #ffffff1f;
+  border-radius: var(--r-md);
+  backdrop-filter: blur(18px) saturate(1.05);
+  box-shadow: 0 18px 44px #0009;
+}
+#toast.toast-error {
+  background: #1d1315e0;
+  border-color: #e5978955;
+  /* a bar rather than a border, so nothing shifts when the tone changes */
+  box-shadow:
+    inset 3px 0 0 var(--danger),
+    0 18px 44px #0009;
+}
+
+/* 2. THE LEGEND DID NOT MATCH THE MAP, WHICH IS ITS ENTIRE JOB.
+
+   Layer icons keep their colour - that is the documented exception - but only
+   because each one "matches that layer's markers on the map". Measured, none
+   of them did. The same two concepts carried three sets of values:
+
+     | concept            | marker  | label   | legend  |
+     | extract, PMC       | #97d5af | #b7ddc7 | #97c6a8 |
+     | extract scav, transit | #8abdd0 | #9bc8dc | #83b6d1 |
+
+   The label being lighter is deliberate - text on artwork needs more lift than
+   a stroke does - but the legend is a swatch, so it has to be the stroke
+   exactly. Scav extracts and transits sharing one colour is also deliberate:
+   the map separates them by glyph, the arrow and the double arrow, and the
+   legend uses the same two glyphs.
+
+   A check in tools/dev/renderer-smoke.js now compares the swatch against the
+   marker, because whichever side drifts next, the sweep above will not be
+   running. */
+.layers .icon.green {
+  color: #97d5af;
+}
+.layers .icon.blue {
+  color: #8abdd0;
+}
+
+/* 3. THE WARM LEFTOVERS THAT STILL WON.
+
+   The earlier warm sweep required `r - b >= 12`. #d4dcca on the position
+   readout and #bec4b4 in the connection dialog are both r - b = 10 - under
+   the bar, and a threshold always has a blind spot immediately below it. This
+   list is everything warm that survived, found by asking for saturation
+   instead of hue. */
+.position-bar strong {
+  color: var(--ink-1);
+}
+.position-bar {
+  border-color: #ffffff1a;
+}
+.detail-head {
+  border-bottom-color: #ffffff14;
+}
+#connection-dialog .dialog-intro,
+.dialog-header p,
+.command-copy small {
+  color: var(--ink-4);
+}
+#connection-dialog .log-diagnostic,
+#connection-dialog .dialog-actions,
+.dialog-header > button,
+.integrity-card,
+.quest-note,
+.progress-control select {
+  border-color: #ffffff1f;
+}
+.integrity-card {
+  color: var(--ink-3);
+}
+.objective-meter {
+  background: #ffffff14;
+}
+.nav.active {
+  background: #ffffff14;
+}
+
+/* The last of it, all in the chrome that floats on the map - the zoom column,
+   the floor picker, the marker button, the two footers. They are the same
+   field-journal khaki as everything above, just quiet enough (10-17 points) to
+   have survived two passes. `--live` on the My Raid count stays: that is the
+   raid you are in, which is exactly what it is for. */
+.zoom-controls {
+  border-color: #ffffff1f;
+}
+.zoom-controls button {
+  color: var(--ink-2);
+  border-bottom-color: #ffffff14;
+}
+.map-footer {
+  border-top-color: #ffffff12;
+}
+.toolbar-actions button,
+.toolbar-actions .map-tool,
+.floor-select,
+#add-marker {
+  color: var(--ink-2);
+}
+.floor-select select {
+  color: var(--ink-1);
+}
+.sidebar-footer {
+  color: var(--ink-4);
+}
+#dashboard-dialog .stat-card,
+#dashboard-dialog .dashboard-panel,
+.command-search {
+  border-color: #ffffff1f;
+}
+
+/* ============================================================================
+   THE CONNECTION CARD MOVED TO SPACE THAT WAS ALREADY EMPTY
+
+   The quest rail is 805px tall and the quest list had 371px of it - 46%, seven
+   rows. The largest single thing taking the rest was the connection card at
+   98px: a status line you read when something breaks, and three buttons you
+   press after a raid. Two quest rows, permanently, for that.
+
+   Measured, the topbar had **429px of empty band** between the search button
+   and the profile picker, at every window size the rail layout covers. So
+   nothing had to be dropped or folded away - the card moved into space that
+   was already being wasted, and the rail got the 98px back.
+
+   It fixes a truncation on the way. `#connection-sub` had 156px in the rail
+   and needs 170px for "Connect your screenshots folder" and 159px for
+   "1204 files · logs read 12 Sep" - the previous fix here only ever measured
+   the version with a clock time in it. In the topbar it has room to say the
+   whole thing.
+   ============================================================================ */
+.topbar .connection-card {
+  /* An earlier generation sets `flex-direction: column` on this card. Setting
+     `display: flex` again does not reset it - a property you do not declare is
+     not a property you have overridden - so the row stacked and grew a topbar
+     four pixels too tall. Declare the direction. */
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 14px;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.topbar .connection-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.topbar .connection-head > div {
+  min-width: 0;
+}
+.topbar #connection-title {
+  display: block;
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--ink-2);
+}
+.topbar #connection-sub {
+  display: block;
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--ink-5);
+}
+.topbar .connection-actions {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.topbar .connection-actions button {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 10px;
+  gap: 6px;
+  border-radius: var(--r-sm);
+}
+
+/* The chevron opened the connection dialog, and so does the gear in `.top-end`.
+   In the rail they were 600px apart; in the topbar they would be neighbours,
+   two controls for one action. The gear is the labelled one, so it keeps it. */
+.topbar #connect-shortcut {
+  display: none;
+}
+
+/* A 1464px window has room for all of it. Narrower ones give up the labels
+   first (the icons and their titles carry the meaning, the way the map tools
+   already do), then the freshness line, before anything wraps. */
+@media (max-width: 1379px) {
+  .topbar .connection-actions button span:not([id]) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .topbar .connection-actions button {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+@media (max-width: 1199px) {
+  .topbar #connection-sub {
+    display: none;
+  }
+}
+@media (max-width: 1000px) {
+  .topbar .connection-head > div {
+    display: none;
+  }
+}
+
+/* ============================================================================
+   FOCUS MADE THE MAP EIGHT TIMES SMALLER
+
+   Reported as "when I put it fullscreen this happens". It is not fullscreen -
+   it is the Focus button, at every window size, and it has been there since
+   the rail layout shipped.
+
+   The third-generation rule reads:
+
+     .map-focus, .map-focus.details-collapsed { grid-template-columns: minmax(0,1fr) }
+     .map-focus .sidebar, .map-focus .details { display: none }
+     .map-focus .map-area { grid-column: 1 }
+
+   which was right when focus mode collapsed `main` to a single column. The
+   rail work then gave `.map-focus` a new two-column template - the handoff
+   even says "any new template for `main` has to be given to those two as
+   well", and it was - but `grid-column: 1` was left behind, and column one is
+   now the 256px rail column. `.map-focus .map-area` is (0,2,0) and the
+   full-bleed `.map-area { grid-column: 1 / -1 }` is (0,1,0), so the old rule
+   won wherever it was in the file.
+
+   Measured in the running application at 1920x1009:
+
+     | Focus | grid-column | map viewport | share of the window |
+     | off   | 1 / -1      | 1920px       | 100%                |
+     | on    | 1           | 256px        | 13%                 |
+
+   The button whose entire job is to give the map the window was taking 87% of
+   it away. A check in tools/dev/renderer-smoke.js now asserts the direction:
+   focus may not make the map narrower than it already was.
+   ============================================================================ */
+.map-focus .map-area,
+.map-focus.details-collapsed .map-area {
+  grid-column: 1 / -1;
+}
+
+/* The wiki button sits among the brief's pills and has to read as something you
+   press, not another label. Same shape as a pill, with the affordance a pill
+   does not have. */
+.pill.wiki-link {
+  cursor: pointer;
+  color: var(--ink-3);
+  background: #ffffff0f;
+  border-color: #ffffff1f;
+}
+.pill.wiki-link:hover {
+  color: var(--ink-1);
+  background: #ffffff1a;
+  border-color: #ffffff33;
+}
+
+/* Raid stats: a bar per map, drawn with two spans rather than a chart library -
+   the CSP blocks external scripts and a count against a maximum does not need
+   one. */
+.raid-stats-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 4px 0 14px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.raid-stats-summary span + span:before {
+  content: '·';
+  margin-right: 14px;
+  color: var(--ink-6);
+}
+.raid-chart {
+  display: grid;
+  gap: 6px;
+}
+.raid-chart-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+.raid-chart-label {
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.raid-bar-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #ffffff0f;
+  overflow: hidden;
+}
+.raid-bar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ink-4);
+}
+.raid-chart-count {
+  color: var(--ink-4);
+  font: 10px Consolas, monospace;
+  text-align: right;
+}
+.raid-stats-note {
+  margin: 14px 0 0;
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.raid-stats-note.quiet {
+  color: var(--ink-6);
+}
+
+/* The quest chain, grouped by distance. Rows rather than a drawn graph: the
+   dependency data is a shallow DAG with diamonds, and a real graph layout would
+   need a library the CSP will not load - and would answer "how far in am I"
+   no better than a list in bands does. */
+/* The chain runs left to right: what opens a line on the left, one column per
+   step, the end of the route on the right. Stacked bands read as a list of
+   groups and said nothing about direction; columns read as a progression,
+   which is what a chain is. It scrolls both ways - a 17-deep route is wider
+   than any dialog, and cramming it would cost the thing the view is for. */
+.chain-content {
+  max-height: 62vh;
+  overflow: auto;
+  padding: 18px 2px 6px;
+}
+.chain-track {
+  display: flex;
+  align-items: flex-start;
+  gap: 30px;
+  min-width: min-content;
+}
+.chain-band {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 170px;
+  max-width: 210px;
+}
+/* The join between two steps, drawn in the gap rather than inside a column:
+   a hairline and an arrowhead, so the eye is told which way the line runs. */
+.chain-band + .chain-band:before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 25px;
+  width: 14px;
+  height: 1px;
+  background: #ffffff2b;
+}
+.chain-band + .chain-band:after {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 21px;
+  border: 4px solid transparent;
+  border-left-color: #ffffff2b;
+}
+.chain-depth {
+  color: var(--ink-6);
+  font: 10px Consolas, monospace;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+/* The column the route ends on, and the column you are standing in, are the
+   two a person looks for first. */
+.chain-column-last .chain-depth,
+.chain-current .chain-depth {
+  color: var(--ink-3);
+}
+.chain-items {
+  display: grid;
+  gap: 6px;
+}
+.chain-node {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid #ffffff14;
+  border-radius: var(--r-sm);
+  background: #ffffff08;
+  color: var(--ink-2);
+  font-size: 11px;
+  text-align: left;
+}
+.chain-node:hover {
+  background: #ffffff14;
+  border-color: #ffffff2b;
+  color: var(--ink-1);
+}
+.chain-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-6);
+  flex: none;
+}
+.chain-node.completed .chain-dot {
+  background: var(--green);
+}
+.chain-node.active .chain-dot {
+  background: var(--live);
+}
+.chain-node.failed .chain-dot {
+  background: var(--danger);
+}
+/* The name may be long and the column is not; the full one is on the button
+   as a title, and on the quest row in the rail. */
+.chain-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chain-trader {
+  margin-left: auto;
+  flex: none;
+  color: var(--ink-6);
+  font-size: 10px;
+}
+.chain-node.chain-here {
+  border-color: #ffffff3d;
+  background: #ffffff1a;
+  color: var(--ink-1);
+  cursor: default;
+}
+.chain-open {
+  margin-top: 4px;
+}
+
+/* "Updated from logs" was a rectangle with no padding and no rounded corners,
+   hugging its text, sitting high in its own box. Two rules were arguing:
+   `.log-source` says no chip - no padding, no background, no radius - and a
+   later `.pill, .count { background: #1e2124 }` put the background back. The
+   result was the worst of both, a bare box.
+
+   The intent stands: where a quest's status came from is an aside, not a badge.
+   So the background goes rather than gets centred. It also needs `align-self`,
+   because `.detail-meta` is a flex row and a stretched item leaves 9px of its
+   20px box empty above the text - which is what read as off-centre. */
+.detail-meta .log-source,
+.quest-row .log-source,
+.log-source {
+  align-self: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  line-height: 1.3;
+}
+
+/* The close × sat low and overflowed its own button: 30x30 with
+   `font-size: 24px; line-height: 36px`, so the glyph's line box was 32px tall
+   inside a 30px box. `place-items: center` was already there and could do
+   nothing - centring cannot help when the thing being centred is bigger than
+   what holds it. Measured: 3px above, -5px below.
+
+   A line-height of 1 makes the box the glyph's own size, and then the grid
+   centring works. The × is drawn slightly above its em centre in most faces,
+   which the 1px nudge answers. */
+.dialog-header > button,
+.close-dialog,
+.close-dialog-button {
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.dialog-header > button {
+  align-content: center;
+  padding-top: 1px;
+}
+
+/* The Progress dialog's panels were #292e27 and #454b3e - olive, at 7 and 13
+   points of saturation. The colour sweep let them through because it judged by
+   saturation alone, and 7 is nothing on a border or a caption. It is not
+   nothing across a 300x400 panel: area carries a tint that a hairline cannot,
+   which is the refinement that sweep needed. */
+#dashboard-dialog .stat-card,
+#dashboard-dialog .dashboard-panel {
+  background: #1a1d20;
+}
+.dashboard-link:hover {
+  background: #ffffff14;
+}
+.integrity-card {
+  background: #16191c;
+}
+
+/* The tick on a My Raid row sat hard against the card's left edge with a clear
+   gap before the number beside it, so it read as pushed into the corner rather
+   than placed. Measured: 0px to the card edge, 9px to the circle.
+
+   The columns were `16px 24px 1fr` with an 8px gap, which leaves a 15px
+   checkbox filling a 16px track - nothing to centre it in. Folding the first
+   gap into the tracks gives it room without moving anything else: the circle
+   still starts at 24px and the quest button still at 56px, and the tick now
+   sits at 4.5px, the same distance from the edge as from the circle. */
+.raid-quest-card {
+  grid-template-columns: 24px 32px minmax(0, 1fr);
+  column-gap: 0;
+}
+.raid-quest-card input {
+  justify-self: center;
+}
+
+/* The tree is the one dialog whose whole point is that you can see the end of
+   the line from the start of it. At the shared 720px only two and a half steps
+   fit and Collector was behind a scrollbar, so this one is as wide as the
+   window sensibly allows. Five columns of 200 with 26px joins is 1104; the
+   window the user runs is 1464. */
+#chain-dialog {
+  width: min(1240px, calc(100vw - 32px));
+}
+.chain-track {
+  gap: 26px;
+}
+.chain-band {
+  min-width: 176px;
+  max-width: 200px;
+}
+
+/* Only the two route bars are pressable, and a <button> brings the base chrome
+   with it - a panel background, a border, its own padding - and stops filling
+   the row, so they came out as two chunky 103px stubs among three full-width
+   readings. They are the same bar as the others; what marks them is that the
+   row lights up under the pointer, which the readings never do. */
+button.dashboard-progress {
+  /* `width: 100%` is a border-box width, so the padding and the border came
+     out of the inside and the bar ran 18px short of the readings above it -
+     358 against 376, starting a pixel left of them. Grow the box by exactly
+     what the padding takes, and drop the border: a 1px edge cannot be paid
+     for out of a negative margin without shifting the text. */
+  width: calc(100% + 16px);
+  background: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  text-align: left;
+  /* NOT `font: inherit` - the shorthand resets font-size, and the class above
+     sets 10px. That one word gave the two route bars visibly larger labels
+     than the three readings beside them, which is the opposite of the point:
+     they are the same bar, and only the hover separates them. */
+  margin: 6px -8px;
+  padding: 3px 8px;
+}
+button.dashboard-progress:hover {
+  background: #ffffff12;
+}
+button.dashboard-progress:hover span {
+  color: var(--ink-1);
+}

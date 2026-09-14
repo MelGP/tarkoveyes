@@ -1,0 +1,49 @@
+/* tokens.css
+ *
+ * The palette. The only place a colour is named.
+ *
+ * Part 1 of app.css, which was split without moving a byte. index.html
+ * loads these in order and later rules still win, so anything that needs
+ * to outrank what is here belongs in a LATER file, not edited into this
+ * one. Not Prettier-formatted, on purpose.
+ */
+/* Design tokens — the single definition of the TarkovEyes palette.
+ *
+ * Each redesign generation added its own :root block redefining the same
+ * names, so 4 blocks competed and only the last value of each name ever
+ * reached the page. Those winning values are collected here verbatim: the
+ * rendering is unchanged, but the palette now has one place to edit.
+ * Responsive overrides inside @media blocks are left where they are.
+ */
+:root {
+  /* Surfaces */
+  color-scheme: dark;
+  --bg: #101113;
+  --panel: #191b1e;
+  --panel-2: #202226;
+  --panel-raised: #11191b;
+  --surface: #141d20;
+  /* Lines */
+  --line: #343638;
+  --line-soft: #292b2e;
+  /* Text */
+  --text: #f0eee8;
+  --muted: #969a9d;
+  --muted-strong: #bec0bd;
+  /* Accents */
+  --gold: #e9b969;
+  --gold-soft: #30291e;
+  --green: #97c6a8;
+  --blue: #91b7d0;
+  --violet: #b6a5ce;
+  --danger: #e59789;
+  /* Layout */
+  --header-height: 72px;
+  --sidebar-width: 322px;
+  --brief-width: 338px;
+}
+/* TarkovEyes renderer stylesheet.
+ * Merged from styles.css, v02.css, v03.css, v04.css, field-journal.css on 2026-09-11,
+ * preserving the exact order those files were linked in, so the cascade is
+ * unchanged. Sections below are the former files; later sections win.
+ */

@@ -20,7 +20,7 @@ Loot container and loose-loot positions were generated 2026-09-10 from the `regu
 
 ## Raid Signal parser references
 
-https://github.com/QTtrash/tarkov-map — Apache License 2.0, included at `licenses/Raid-Signal-LICENSE`. Screenshot grammar, quaternion direction and map/lifecycle log formats in `core.cjs` were adapted from its Rust parser references. Our JavaScript file observer, state storage and UI are new implementations. Preserve this notice in derivatives.
+https://github.com/QTtrash/tarkov-map — Apache License 2.0, included at `licenses/Raid-Signal-LICENSE`. Screenshot grammar, quaternion direction and map/lifecycle log formats in `core.js` were adapted from its Rust parser references. Our JavaScript file observer, state storage and UI are new implementations. Preserve this notice in derivatives.
 
 ## TarkovMonitor format reference
 

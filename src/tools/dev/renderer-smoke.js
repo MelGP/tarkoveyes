@@ -763,12 +763,12 @@
       };
     };
 
-    const real = window.isDone;
+    const real = window.isDoneRecorded;
     let before, after, hidden;
     try {
       before = readPin();
       if (!before) throw Error('could not find the pin for ' + victim.description.slice(0, 40));
-      window.isDone = o => (o && o.id === victim.id ? true : real(o));
+      window.isDoneOverride = o => (o && o.id === victim.id ? true : real(o));
       renderMarkers();
       await wait(300);
       after = readPin();
@@ -785,7 +785,7 @@
       box.dispatchEvent(new Event('change', { bubbles: true }));
       await wait(300);
     } finally {
-      window.isDone = real;
+      window.isDoneOverride = null;
       renderMarkers();
     }
 

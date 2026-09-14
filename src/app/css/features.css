@@ -1,0 +1,339 @@
+/* features.css
+ *
+ * One section per feature, newest last. A section here wins over every section in every file above it, which is how this stylesheet has stayed reviewable - a correction is appended, never edited into an older generation.
+ *
+ * Part 8 of app.css, which was split without moving a byte. index.html
+ * loads these in order and later rules still win, so anything that needs
+ * to outrank what is here belongs in a LATER file, not edited into this
+ * one. Not Prettier-formatted, on purpose.
+ */
+/* ==========================================================================
+   AN UNTRACKED QUEST DREW NOTHING AND SAID NOTHING
+   --------------------------------------------------------------------------
+   The map only shows quests the application has a record of, and a record only
+   exists where a log line happened to be read. So a task the game says is 3/4
+   done had an empty map and a select reading "Untracked" - a true word that
+   explains nothing and points at no fix. The line under the control names what
+   is missing and what to press, so it sits at the muted weight of a caption
+   rather than competing with the status it explains.
+   ========================================================================== */
+.progress-hint {
+  display: block;
+  margin: 8px 2px 0;
+  color: var(--ink-5);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+/* ==========================================================================
+   THE SAME FIVE GLYPHS IN THE LIST AND ON THE MAP
+   --------------------------------------------------------------------------
+   The map's pins say what you do at a point - find, go, mark, plant, kill -
+   and nothing would teach those five without a legend nobody would read. The
+   brief's objective rows carry the identical glyph beside the sentence it
+   stands for, so the list is the legend and the two views stop being separate
+   vocabularies for one quest.
+
+   It takes `currentColor`, so a done objective's glyph greys out with the text
+   it belongs to rather than staying bright over a struck-through line.
+   ========================================================================== */
+.objective-verb {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--ink-4);
+}
+.objective.done .objective-verb {
+  color: #788b86;
+}
+
+/* ==========================================================================
+   A FINISHED OBJECTIVE IS STILL A PLACE, JUST NOT ONE TO GO TO
+   --------------------------------------------------------------------------
+   Its pin is drawn in the completed green with a tick for a head, at about
+   four tenths opacity - quiet enough that the eye skips it, present enough
+   that you can still see the point exists and click it. The checkbox that
+   removes it entirely is the first row of Map layers, above the extracts,
+   because what you have left to do outranks the scenery.
+
+   The row takes the separator the other groups use, so it reads as its own
+   thing rather than as the first extract option.
+   ========================================================================== */
+.layer-objectives .icon {
+  color: var(--ink-3);
+}
+
+/* ==========================================================================
+   MY RAID SAYS WHICH OF IT HAS SOMEWHERE TO GO
+   --------------------------------------------------------------------------
+   Measured across this profile, 53 of 89 My Raid rows drew nothing on the map
+   at all - kill counts, extractions, hand-ins - and they sat mixed in with the
+   ones that name a place, so the glance before a raid was ten rows deep to
+   find the three that tell you where to go. On Lighthouse it was eleven of
+   seventeen.
+
+   Two groups now, the useful one first, each heading carrying its own count.
+   The group heading is a divider rather than a card: the cards under it are
+   the objects, and boxing a label around them would add an edge where nothing
+   changes - the same rule the sidebar pass settled on.
+   ========================================================================== */
+.raid-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 20px 2px 9px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.raid-group:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 16px;
+}
+.raid-group-note {
+  display: block;
+  margin: -4px 2px 11px;
+  color: var(--ink-6);
+  font-size: 10px;
+  line-height: 1.6;
+}
+/* `--live` means "this is happening now", and a quest you can close in this
+   raid is the closest thing in the panel to that, so it takes the accent and
+   nothing else in here does. Only drawn where it is true: a chip on every row
+   is wallpaper. */
+.raid-flag {
+  display: inline-block;
+  margin-top: 7px;
+  padding: 2px 6px;
+  border: 1px solid #e9b96955;
+  border-radius: var(--r-sm);
+  color: var(--live);
+  font: 700 8px Consolas, monospace;
+  letter-spacing: 1px;
+}
+.raid-elsewhere {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink-5);
+  font-size: 10px;
+}
+
+/* ==========================================================================
+   THE DRAWN LOGO
+   --------------------------------------------------------------------------
+   The user drew a mark for the application, so the hand-built `#eye-mark` in
+   icons.svg gives way to it in the topbar. The wordmark in the file is not
+   used there: the topbar already writes TARKOVEYES as live text, which stays
+   crisp at any size and which the responsive ladder drops on its own at
+   1000px, and two wordmarks side by side would be one too many.
+
+   Measured off the artwork, the eye is 867 by 410 - a shape no square crop
+   holds without swallowing the wordmark under it - so the mark keeps its own
+   2:1 and the box is wide rather than square. The chrome the old box carried
+   (gradient, border, inset highlight) goes: it existed to give a line-art
+   glyph somewhere to sit, and a drawn mark on its own ground needs no frame.
+   ========================================================================== */
+/* Square and larger, because the emblem is square and because 30px was where
+   its ring segments merged. The user wanted it here rather than the flat mark,
+   so the box is sized to the thing that now goes in it. */
+.brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.brand-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* The same glow the line-art mark had, so the brand keeps its weight against
+     the topbar rather than reading as a flat sticker. */
+  filter: drop-shadow(0 0 7px #e9b96933);
+}
+@media (max-width: 1250px) {
+  .brand-icon {
+    width: 38px;
+    height: 38px;
+  }
+}
+/* About is the one place the whole drawn logo belongs, wordmark and all: it is
+   the page that answers "what is this", and the file was made to say exactly
+   that. It keeps its own black ground because that is how it was drawn. */
+/* The emblem has its own transparency, so there is no black square to round
+   off any more - a radius on it would clip the gold ring instead. */
+.about-logo {
+  display: block;
+  width: 140px;
+  height: 140px;
+  margin: 2px auto 10px;
+  object-fit: contain;
+}
+
+/* ==========================================================================
+   THE BTR STOPS, AND THE ROUTE THAT IS NOT THERE
+   --------------------------------------------------------------------------
+   Fourteen stops - six on Streets, eight on Woods - each a name and a position
+   and nothing else. There is no route in the bundled data, and the marker
+   popup says so rather than letting an absent line imply one: joining the
+   stops in id order gives a loop only 21% shorter than a random one, and the
+   vehicle follows roads that are not in the file at all.
+
+   Olive, because that is what the thing is, and because it is the one colour
+   in the layer legend not already spoken for: extract mint, transit blue, door
+   tan, switch steel, loot amber, keycard violet.
+   ========================================================================== */
+.btr-map-marker {
+  cursor: pointer;
+}
+.btr-layer-icon {
+  color: #9ab27a;
+}
+/* A silhouette, so it is filled and has no stroke to thicken at small sizes. */
+.btr-map-marker .btr-glyph {
+  fill: #9ab27a;
+  stroke: none;
+}
+.btr-map-marker:hover circle:first-child,
+.btr-map-marker:focus-visible circle:first-child {
+  stroke: #c4dba4;
+  fill-opacity: 1;
+}
+
+/* ==========================================================================
+   THE BTR CIRCUIT LINE, AND WHAT IT IS NOT
+   --------------------------------------------------------------------------
+   Dashed and half-opacity on purpose. A solid line on a map is a claim about
+   a road, and this is not one: it joins the stops in the order the game
+   numbers them, in straight lines, because the path the vehicle actually
+   drives is published nowhere. The popup says so in words; the dashes say so
+   before anyone reads them.
+
+   It takes no pointer events, so it can never swallow a drag the way the
+   hazard polygons would have.
+   ========================================================================== */
+.btr-route {
+  fill: none;
+  stroke: #9ab27a;
+  stroke-opacity: 0.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   THE TASKS SCAN CAN IMPORT A QUEST, NOT ONLY AN OBJECTIVE
+   --------------------------------------------------------------------------
+   The Tasks screen is a table of names, locations, statuses and progress bars.
+   It carries no objective text at all - so the only thing the review dialog
+   could apply was absent from the one screen it exists for, and Apply was
+   disabled every single time it ran.
+
+   The quest row itself is the import. Its checkbox reads like the objective
+   ones because it does the same job; the line under it says why it is there.
+   ========================================================================== */
+.scan-quest small {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-6);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.scan-known {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink-5);
+  font-size: 10px;
+}
+
+/* ==========================================================================
+   WHO IS HOLDING QUESTS FOR YOU
+   --------------------------------------------------------------------------
+   `--live` means "this is happening now", and a trader with something to hand
+   you is the closest thing on the Progress screen to it. It only ever appears
+   where there is something to collect: a zero on the other rows would be
+   eleven ways of saying nothing.
+   ========================================================================== */
+.trader-waiting {
+  margin-left: auto;
+  margin-right: 10px;
+  padding: 2px 7px;
+  border: 1px solid #e9b96955;
+  border-radius: var(--r-sm);
+  color: var(--live);
+  font: 700 8px Consolas, monospace;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+}
+.dashboard-link .trader-waiting + small {
+  margin-left: 0;
+}
+
+/* ==========================================================================
+   A DUPLICATED QUEST NAME SAYS WHICH ONE IT IS
+   --------------------------------------------------------------------------
+   Nine names appear more than once and were indistinguishable in the rail -
+   same name, same trader, nothing else. Make Amends appears three times.
+
+   The tag is the faction where the pair is a BEAR/USEC split, and the map
+   where it is simply two different tasks that share a name. It is drawn only
+   on those rows: 17 of five hundred.
+
+   The faction you cannot play is quieter rather than hidden. Hiding it would
+   make the pair look like a single quest again, which is the problem.
+   ========================================================================== */
+.quest-tag {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 5px;
+  border: 1px solid #ffffff1f;
+  border-radius: var(--r-sm);
+  color: var(--ink-5);
+  font: 700 8px Consolas, monospace;
+  letter-spacing: 0.6px;
+  vertical-align: 1px;
+}
+.quest-tag.other-faction {
+  opacity: 0.45;
+}
+
+/* ==========================================================================
+   THE FILTER PANEL WAS THREE ROWS PRETENDING TO BE TWO
+   --------------------------------------------------------------------------
+   `.quest-filter-panel .filters` has been a two-column grid for generations,
+   but `.filters #map-filter { grid-column: 1 / -1 }` from the second pass makes
+   the map picker span both - so four selects landed as 1 + 2 + 1, three rows.
+
+   Measured: opening the panel took 127px off the quest list. Two rows of two
+   gives 41px of it back. The map picker gets no more room than the others
+   because it needs none: "Streets of Tarkov" is the longest option and it fits.
+   ========================================================================== */
+.quest-filter-panel .filters #map-filter {
+  grid-column: auto;
+}
+
+/* ==========================================================================
+   A ROW WITH NOWHERE TO GO SAYS WHAT IT WANTS
+   --------------------------------------------------------------------------
+   36 of this profile's 63 active quests have no point on any map. Their rows
+   carried a trader name and nothing else, when the thing you would plan around
+   is right there in the objective: "Eliminate 20 PMCs with AK-12 with the
+   proprietary suppressor" is a loadout decision.
+
+   It is the first objective still outstanding, not the first objective, so a
+   quest half done asks for what is left.
+   ========================================================================== */
+.raid-wants {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink-5);
+  font-size: 10px;
+  line-height: 1.5;
+}

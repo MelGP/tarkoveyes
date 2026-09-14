@@ -1,0 +1,491 @@
+/* map.css
+ *
+ * The map takes the whole window, and the chrome gives up its colour to it.
+ *
+ * Part 4 of app.css, which was split without moving a byte. index.html
+ * loads these in order and later rules still win, so anything that needs
+ * to outrank what is here belongs in a LATER file, not edited into this
+ * one. Not Prettier-formatted, on purpose.
+ */
+/* ==========================================================================
+   THE MAP IS THE APPLICATION, SO IT GETS THE WHOLE WINDOW
+   --------------------------------------------------------------------------
+   Every generation above this boxed the map into the middle column of a
+   three-column grid: a panel, inside padding, inside a border, with two more
+   panels beside it. On a 1464px window that spent roughly a third of the
+   screen on edges and left the map about 800px.
+
+   Here the map fills the frame and the two rails float over it as glass. The
+   grid stays - the rails still take their widths from it - but the map spans
+   every column, so showing or hiding the brief no longer resizes the viewport
+   underneath. Measured in the running application: #map-viewport reads 1464px
+   with the brief open and 1464px with it closed, where it used to jump by
+   338px and re-render every marker.
+
+   Scoped to wide windows on purpose. The two narrower layouts further down
+   already have their own answers - the brief floats at 1100px, the whole
+   thing becomes a single column at 620px - and neither wants a full-height
+   glass rail lying over the map.
+   ========================================================================== */
+@media (min-width: 1101px) {
+  /* How much of each edge the rails are currently covering. Everything that
+     floats on the map reads its inset from these instead of hard numbers,
+     which is what keeps the map chrome out from under the glass in all four
+     combinations of the two rails. Getting this wrong is not subtle and it is
+     not visible in a screenshot of the default state: the popup opens at
+     right:62px, and with a brief open that put it entirely behind the brief. */
+  main {
+    --rail-left: var(--sidebar-width);
+    --rail-right: var(--brief-width);
+    padding: 0;
+    gap: 0;
+  }
+  .details-collapsed {
+    --rail-right: 0px;
+  }
+  .map-focus,
+  .map-focus.details-collapsed {
+    --rail-left: 0px;
+    --rail-right: 0px;
+    padding: 0;
+  }
+
+  /* Three layers stacked in one grid cell: artwork, rails, map chrome. */
+  .map-area {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    z-index: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  .map-focus .map-area {
+    border-radius: 0;
+    box-shadow: none;
+  }
+  #map-viewport {
+    border-radius: 0;
+  }
+
+  /* The glass goes on a pseudo-element, not on the rail itself, and that is
+     load-bearing. `backdrop-filter` makes an element the containing block for
+     its `position: fixed` descendants, and the Map layers drawer is exactly
+     that: it stopped being positioned against the viewport, started being
+     positioned against the sidebar (72px too low), and was then clipped out of
+     existence by the sidebar's own `overflow: hidden`. The panel still
+     measured a sensible box, so it looked like it was opening - it just never
+     painted, and clicks fell through to the map behind it.
+
+     Filtering a child leaves the rail itself an ordinary box, so anything
+     fixed inside it is measured against the viewport again. Anything else
+     that tints these rails must go on the pseudo-element too. */
+  .sidebar,
+  .details {
+    position: relative;
+    grid-row: 1;
+    z-index: 2;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  .sidebar:before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: #0d1214d9;
+    backdrop-filter: blur(18px) saturate(1.1);
+  }
+  /* The brief scrolls (1486px of content in an 805px card), and an absolutely
+     positioned child of a scroll container scrolls with it - the glass slid
+     away and the lower half of the card lost its background entirely. The
+     brief holds nothing `position: fixed`, so unlike the sidebar it can carry
+     the filter itself, and a real background does not scroll. */
+  .details {
+    background: #0d1214d9;
+    backdrop-filter: blur(18px) saturate(1.1);
+  }
+  .sidebar {
+    grid-column: 1;
+    border-right: 1px solid #ffffff0f;
+    box-shadow: 24px 0 60px #0007;
+  }
+  .details {
+    grid-column: 3;
+    border-left: 1px solid #ffffff0f;
+    box-shadow: -24px 0 60px #0007;
+  }
+
+  /* The artwork now runs to all four edges, so it has to fall away at them.
+     Without this the map fights the glass for attention at exactly the place
+     the eye is trying to read a quest name. */
+  .map-area:after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: radial-gradient(115% 95% at 50% 45%, transparent 60%, #05090a99 100%);
+  }
+
+  /* The toolbar and the footer stop being bars and become type lying on the
+     map, inset past whichever rails are showing. */
+  .map-toolbar,
+  .map-footer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    border: 0;
+    background: none;
+    padding-left: calc(var(--rail-left) + 26px);
+    padding-right: calc(var(--rail-right) + 26px);
+    /* These are now full-width transparent strips lying on the map, and an
+       element that is merely invisible still swallows the mouse. Measured
+       before this line: document.elementFromPoint(700, 95) returned the
+       toolbar, so the top 60px and the bottom 30px of the map could not be
+       dragged or scrolled. The controls take the mouse back individually. */
+    pointer-events: none;
+  }
+  /* .toolbar-actions is the only thing in either strip that is interactive:
+     the map name, the eyebrow and the two credit lines are text. Giving the
+     mouse back to the buttons alone leaves the rest of both strips draggable. */
+  .map-toolbar .toolbar-actions {
+    pointer-events: auto;
+  }
+  .map-toolbar {
+    top: 0;
+    padding-top: 18px;
+  }
+  .map-footer {
+    bottom: 0;
+  }
+
+  /* Type on artwork needs its own ground. A gradient gives it one without
+     drawing a bar back in. */
+  .map-toolbar:before,
+  .map-footer:before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .map-toolbar:before {
+    top: -18px;
+    height: 130px;
+    background: linear-gradient(#070c0ecc, #070c0e00);
+  }
+  .map-footer:before {
+    bottom: -10px;
+    height: 80px;
+    background: linear-gradient(#070c0e00, #070c0ecc);
+  }
+
+  /* The three things that float on the map were all anchored to the middle
+     column's edges and are now anchored to the window's, so each one gets the
+     rail inset added to the gap it already wanted. */
+  .map-popup {
+    right: calc(var(--rail-right) + 62px);
+    max-width: min(300px, calc(100% - var(--rail-left) - var(--rail-right) - 40px));
+  }
+  .zoom-controls {
+    right: calc(var(--rail-right) + 16px);
+  }
+  .position-bar {
+    left: calc(var(--rail-left) + 16px);
+    max-width: calc(100% - var(--rail-left) - var(--rail-right) - 86px);
+  }
+  #map-loading {
+    left: var(--rail-left);
+    width: calc(100% - var(--rail-left) - var(--rail-right));
+  }
+  /* The compass was anchored right:22px and is the easiest of these to miss,
+     because it is only invisible while the brief is open - every screenshot
+     taken with the brief closed shows it sitting correctly at the edge. */
+  .north {
+    right: calc(var(--rail-right) + 22px);
+  }
+
+  /* The layers drawer flies out from the sidebar's right edge, and that edge
+     moved: main used to carry 16px of padding, so the sidebar ended at 338
+     and a 26px offset left a 10px gap. Flush to the window it ends at 322 and
+     the same offset reads as 26. (Measure this at least 160ms after opening -
+     the drawer animates in from translateX(-10px) and an early read is ten
+     pixels short.) */
+  .layer-disclosure[open] > .layers {
+    left: calc(var(--sidebar-width) + 10px);
+  }
+
+  /* The map name is the largest thing on the screen now, so it can stop
+     shouting in small capitals and simply be large. */
+  #focus-label {
+    max-width: none;
+    color: #f2efe6;
+    font-size: 22px;
+    font-weight: 300;
+    letter-spacing: -0.3px;
+  }
+  .map-toolbar .eyebrow {
+    margin-bottom: 2px;
+  }
+
+  /* Controls float as well, or they read as holes cut in the glass. */
+  .toolbar-actions .map-tool,
+  .floor-select select,
+  .zoom-controls button {
+    border: 1px solid #ffffff14;
+    background: #0e1518b3;
+    backdrop-filter: blur(12px) saturate(1.1);
+    color: #dfe3de;
+  }
+  .toolbar-actions .map-tool:hover,
+  .zoom-controls button:hover {
+    border-color: #ffffff26;
+    background: #172126cc;
+    color: #f2efe6;
+  }
+  .zoom-controls {
+    gap: 1px;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: #ffffff10;
+    box-shadow: 0 8px 26px #0007;
+  }
+  .position-bar {
+    border: 1px solid #ffffff14;
+    background: #0e1518c4;
+    backdrop-filter: blur(16px) saturate(1.1);
+    box-shadow: 0 10px 30px #0006;
+  }
+  .map-popup {
+    border: 1px solid #ffffff1a;
+    background: #0d1416e0;
+    backdrop-filter: blur(16px) saturate(1.1);
+  }
+}
+
+/* ==========================================================================
+   MONOCHROME CHROME, COLOURED MAP
+   --------------------------------------------------------------------------
+   The palette was a warm khaki field journal: gold headings, brown panels,
+   amber icons, a gold box round anything that mattered. The user asked for it
+   to go. The rule that replaces it:
+
+     the interface is greyscale; the map keeps every colour it has.
+
+   That split is not a compromise, it is the point. On the map, colour IS the
+   data - a red hazard band, a gold quest marker, the blue water on Customs -
+   and washing it out would cost information. In the chrome, colour was
+   decoration: nothing was learned from the fact that "KEYS TO BRING" was gold.
+   So the chrome gives its colour up and the map keeps all of it, which also
+   means the eye now goes to the map first, because it is the only thing on
+   screen with any.
+
+   One accent survives in the chrome, `--live`, and it means exactly one
+   thing: this is happening now. The raid you are in, the quest you have
+   active. Nothing decorative may use it - the moment a second thing wears it,
+   it stops meaning the first.
+
+   Scope: everything here is under `.topbar`, `.sidebar`, `.details`, dialogs
+   or the map's own floating chrome. Nothing reaches inside `#map-svg`. If you
+   add a rule here, check it the same way: sample the rendered colours of the
+   chrome and of the map separately, and only the chrome should come back
+   grey.
+   ========================================================================== */
+:root {
+  /* The old --gold is now the brightest neutral: "the thing you are working
+     on" reads as the lightest thing on a dark ground rather than the warmest.
+     Keeping the name is deliberate - roughly a thousand rendered elements
+     reference it, and renaming them all would be a far larger diff than the
+     change is worth. */
+  --gold: #e6e8ea;
+  --gold-soft: #23262a;
+  --live: #e9b969;
+}
+
+/* --- surfaces ---------------------------------------------------------- */
+.topbar {
+  background: #141618;
+  border-bottom-color: #2a2d30;
+}
+.sidebar {
+  background: none;
+}
+.sidebar:before,
+.details {
+  background: #16181ae6;
+}
+.map-heading {
+  background: #1a1c1f;
+  border-bottom-color: #2e3135;
+}
+.map-heading:before {
+  display: none;
+}
+.location-rule {
+  background: #6e7378;
+}
+.connection-card {
+  background: #1a1c1f;
+  border-color: #2e3135;
+}
+.brand-icon {
+  border-color: #3c4044;
+  background: #1e2124;
+  color: #e8eaec;
+}
+
+/* --- text and small print ---------------------------------------------- */
+#location,
+.detail-empty h2,
+.detail-head h2 {
+  color: #f2f4f5;
+}
+.location-caption,
+.map-toolbar .eyebrow,
+#bp-layer-note,
+#position-label {
+  color: #8f9499;
+}
+.detail-head .eyebrow,
+.loot-intel .eyebrow,
+.dialog-header .eyebrow {
+  color: #a8adb2;
+}
+#north-arrow,
+.north {
+  color: #cdd1d4;
+}
+
+/* --- chips, pills and counts ------------------------------------------- */
+.pill,
+.count {
+  border-color: #35393d;
+  background: #1e2124;
+  color: #bcc1c5;
+}
+
+/* --- the quest list ----------------------------------------------------- */
+.quest-row:hover {
+  border-color: #303438;
+  background: #1c1f22;
+}
+.quest-row.selected {
+  border-color: #3a3e42;
+  background: #202326;
+  box-shadow: inset 2px 0 var(--live);
+}
+
+/* --- My Raid ------------------------------------------------------------
+   The user asked twice for the box around this to go. It had two: a gold
+   border round the button, and a grey chip round the label inside it (that
+   one is deleted further up, where it was written). What is left says the
+   same thing with an edge instead of an outline. */
+.active-map-button {
+  border: 0;
+  background: #1e2124;
+  color: #eceef0;
+  box-shadow: inset 2px 0 var(--live);
+}
+.active-map-button:hover {
+  background: #26292d;
+}
+.active-map-button .icon {
+  color: #b8bdc2;
+}
+.active-map-button #active-count {
+  background: var(--live);
+  color: #191b1d;
+}
+
+/* --- layers panel ------------------------------------------------------- */
+.layers .layer-label-toggle:has(input:checked) .name-symbol {
+  border-color: #4a4f54;
+  background: #26292d;
+  color: #e2e5e8;
+}
+.loot-layer-options label:has(input:checked) {
+  border-color: #4a4f54;
+  background: #202326;
+  color: #e2e5e8;
+}
+.loot-layer-options label.loot-featured,
+.loot-layer-head .loot-quick-actions button:first-child {
+  border-color: #3e4247;
+  color: #d2d6da;
+}
+.layer-presets button.active,
+.toolbar-actions .map-tool.active {
+  border-color: #52585e;
+  background: #262a2e;
+  color: #f0f2f4;
+}
+
+/* --- actions ------------------------------------------------------------ */
+.primary {
+  border-color: #e8eaec;
+  background: #e8eaec;
+  color: #16181a;
+}
+.primary:hover {
+  border-color: #fff;
+  background: #fff;
+}
+#refresh-logs,
+#scan-tasks,
+.favorite-button {
+  color: #c6cbcf;
+}
+
+/* --- the one thing that means "now" ------------------------------------- */
+.quest-status.active {
+  background: var(--live);
+  box-shadow: 0 0 8px #e9b96955;
+}
+.progress-track div {
+  background: #9aa0a6;
+}
+
+/* The stragglers the colour sweep found after the pass above. Each one is a
+   rule from an earlier generation that hard-codes khaki rather than reading
+   --gold, so the token change did not reach it. `!important` appears only
+   where the rule being corrected used it first.
+
+   Deliberately NOT in this list, and they are not oversights: .door-layer-icon,
+   .boss-layer-icon, the extract/transit/marker icon colours and the hazard
+   swatches. Those sit next to a checkbox that turns a layer on, and they are
+   the same colour as that layer's markers on the map - they are a legend, so
+   they follow the map, not the chrome. The trader badges are identity colours
+   for the same reason. */
+.map-heading .eyebrow {
+  color: #8f9499;
+}
+.location-picker > span {
+  color: #9aa0a6;
+}
+#refresh-logs {
+  color: #c6cbcf !important;
+}
+.summary-title .icon {
+  color: #b8bdc2;
+}
+.loot-layer-options label:has(input:checked) {
+  border-color: #4a4f54 !important;
+  background: #202326 !important;
+  color: #e2e5e8 !important;
+}
+.layer-disclosure[open] {
+  border-color: #3a3e42;
+}
+.quest-row:hover .quest-arrow,
+.quest-row.selected .quest-arrow {
+  color: #b8bdc2;
+}
+.objective button {
+  border-color: #4a4f54;
+  background: #242729;
+  color: #d2d6da;
+}

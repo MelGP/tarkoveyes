@@ -4,16 +4,16 @@
   "description": "A local Tarkov map, quest and hover item-price companion",
   "author": "Personal project",
   "license": "MIT",
-  "main": "main.cjs",
+  "main": "main/main.js",
   "scripts": {
     "start": "electron .",
-    "preview": "node preview.cjs",
-    "test": "node --test test/*.test.cjs",
-    "sync": "node tools/release/sync-installed.cjs",
-    "sync:check": "node tools/release/sync-installed.cjs --check",
-    "package": "node tools/release/package.cjs",
-    "update-loot": "node tools/update/update-loot.cjs --download-icons",
-    "update-items": "node tools/update/update-items.cjs"
+    "preview": "node tools/dev/preview.js",
+    "test": "node --test test/*.test.js",
+    "sync": "node tools/release/sync-installed.js",
+    "sync:check": "node tools/release/sync-installed.js --check",
+    "package": "node tools/release/package.js",
+    "update-loot": "node tools/update/update-loot.js --download-icons",
+    "update-items": "node tools/update/update-items.js"
   },
   "devDependencies": {
     "electron": "^44.2.0"
@@ -21,5 +21,6 @@
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
     "tesseract.js": "^7.0.0"
-  }
+  },
+  "type": "module"
 }
