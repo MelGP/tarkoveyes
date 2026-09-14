@@ -42,7 +42,9 @@ export async function ensureOcrWorker() {
         langPath: language.langPath,
         workerPath: require.resolve('tesseract.js/src/worker-script/node/index.js'),
         corePath: path.dirname(require.resolve('tesseract.js-core/tesseract-core.wasm.js')),
-        cachePath: path.join(app.getPath('userData'), 'ocr-cache'),
+        /* Tesseract's traineddata cache is a cache, so it goes where the rest
+           of them do and the profile folder keeps holding two things. */
+        cachePath: path.join(app.getPath('sessionData'), 'ocr-cache'),
         logger: progress => {
           const done = progress.progress || 0,
             step = progress.status + ':' + Math.floor(done * 10);
