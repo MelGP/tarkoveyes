@@ -1,6 +1,6 @@
 {
   "name": "tarkoveyes",
-  "version": "0.22.1",
+  "version": "0.22.2",
   "description": "A local Tarkov map, quest and hover item-price companion",
   "author": "Personal project",
   "license": "MIT",
@@ -16,7 +16,7 @@
     "update-items": "node tools/update/update-items.js"
   },
   "devDependencies": {
-    "electron": "^44.2.0",
+    "electron": "^44.4.0",
     "rcedit": "^5.0.2"
   },
   "dependencies": {
